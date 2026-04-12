@@ -1,0 +1,59 @@
+name: nexamail
+
+# NexaMail service stack.
+#
+# Runs on the shared Hetzner host (ssh alias: nexamail). Host Postgres
+# and Redis are reached via host.docker.internal — on Linux this must
+# be explicitly mapped with extra_hosts host-gateway (see prior design
+# decision: use host.docker.internal uniformly between local and host).
+#
+# Ports are bound to 127.0.0.1 only. Public access goes through the
+# host nginx (already running) which will proxy / terminate TLS when
+# we wire it up in a later phase.
+
+services:
+  imap-bridge:
+    build:
+      context: ../services/imap-bridge
+    image: nexamail/imap-bridge:dev
+    container_name: nexamail-imap
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "127.0.0.1:4001:4001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ai-bridge:
+    build:
+      context: ../services/ai-bridge
+    image: nexamail/ai-bridge:dev
+    container_name: nexamail-ai
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "127.0.0.1:4002:4002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4002/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
