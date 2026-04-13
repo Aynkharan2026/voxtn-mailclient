@@ -5,7 +5,8 @@ export type AuditAction =
   | 'email_sent'
   | 'email_failed'
   | 'unsubscribe'
-  | 'unsubscribe_admin';
+  | 'unsubscribe_admin'
+  | 'shared_inbox_accessed';
 
 export async function logAudit(params: {
   ownerEmail: string;

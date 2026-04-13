@@ -6,6 +6,7 @@ import { startCampaignWorker, startSendWorker } from './queue.js';
 import { auditRoutes } from './routes/audit.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { sendRoutes } from './routes/send.js';
+import { sharedInboxRoutes } from './routes/shared-inboxes.js';
 import { unsubscribeRoutes } from './routes/unsubscribe.js';
 
 const logger = pino({
@@ -34,6 +35,7 @@ app.get('/health', async () => ({
 
 await app.register(sendRoutes);
 await app.register(campaignRoutes);
+await app.register(sharedInboxRoutes);
 await app.register(unsubscribeRoutes);
 await app.register(auditRoutes);
 
