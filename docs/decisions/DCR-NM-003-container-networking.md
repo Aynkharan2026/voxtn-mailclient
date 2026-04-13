@@ -51,6 +51,32 @@ We need containerized VoxMail services to:
 - A developer without Docker Desktop on Linux (using Docker Engine directly) also benefits from this — `host.docker.internal` works there too once the mapping is in place.
 - Public exposure is a separate concern handled by nginx; we will not accidentally leak a service by adding it to compose.
 
+## Addendum (2026-04-13) — host services must bind to the docker bridge
+
+`host-gateway` on Linux resolves to **`172.17.0.1`** (docker0), even when the container is on a user-defined compose network with a different subnet. For a container to actually *reach* a host service through that address, the service must be listening on `172.17.0.1` (or `0.0.0.0`) — not just `127.0.0.1`.
+
+This is a hidden prerequisite not covered in the original DCR. It was discovered when BullMQ's ioredis client in `voxmail-imap` got `ECONNREFUSED 172.17.0.1:6379` while Redis was bound only to `127.0.0.1` on the host.
+
+### Host config changes applied on `nexamail` (77.42.6.218)
+
+**Redis** (`/etc/redis/redis.conf`):
+- `bind 127.0.0.1 -::1 172.17.0.1` (was: `127.0.0.1 -::1`)
+- `protected-mode no` (was: `yes`)
+- Rationale for disabling protected-mode: with `172.17.0.1` added to `bind`, Redis rejects non-loopback connections when no password is set. Setting a password would break every other tenant on this host. Disabling protected-mode accepts that any Docker container on this host can connect — same trust boundary the other tenants already operate in (they all run on `127.0.0.1` and don't isolate between themselves).
+
+**PostgreSQL** (`/etc/postgresql/16/main/postgresql.conf`):
+- `listen_addresses = 'localhost,172.17.0.1'` (was: `localhost`)
+
+**pg_hba.conf**: appended
+```
+host    all             all             172.16.0.0/12           md5
+```
+The `/12` CIDR covers every standard Docker-allocated subnet (172.16.0.0 – 172.31.255.255). `md5` auth means a password is always required; the CIDR change only affects *which source IPs* may attempt to authenticate.
+
+### Operational note
+
+If the Docker daemon is ever reconfigured to advertise a different default gateway (e.g. via `default-address-pool`), the `bind` / `listen_addresses` entries above must be updated to match. Until then the assumption holds: **containers on any bridge network reach the host at `172.17.0.1`**.
+
 ## References
 
 - Docker docs: [networking — special DNS name `host.docker.internal`](https://docs.docker.com/desktop/networking/#i-want-to-connect-from-a-container-to-a-service-on-the-host)
