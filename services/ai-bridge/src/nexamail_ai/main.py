@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from .crm import router as crm_router
+
 app = FastAPI(title="NexaMail AI", version="0.1.0")
+app.include_router(crm_router)
 
 
 class HealthResponse(BaseModel):
