@@ -1,0 +1,15 @@
+{
+  "name": "voxtn-mailclient",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web:dev": "npm run dev --workspace apps/web",
+    "web:build": "npm run build --workspace apps/web",
+    "web:start": "npm run start --workspace apps/web",
+    "web:typecheck": "npm run typecheck --workspace apps/web"
+  }
+}
