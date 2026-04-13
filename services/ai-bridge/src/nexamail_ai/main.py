@@ -9,6 +9,7 @@ from .config import settings
 from .crm import router as crm_router
 from .db import close_pool, init_pool
 from .signatures import router as signatures_router
+from .voice import router as voice_router
 
 
 @asynccontextmanager
@@ -27,6 +28,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="VoxMail AI", version="0.1.0", lifespan=lifespan)
 app.include_router(crm_router)
 app.include_router(signatures_router)
+app.include_router(voice_router)
 
 
 class HealthResponse(BaseModel):

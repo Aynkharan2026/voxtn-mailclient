@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Editor } from "./Editor";
-import { cancelSendAction, sendEmailAction } from "@/app/compose/actions";
+import { MicButton } from "./MicButton";
+import {
+  cancelSendAction,
+  sendEmailAction,
+  voiceToEmailAction,
+} from "@/app/compose/actions";
 
 type Status =
   | { state: "idle" }
@@ -178,6 +183,25 @@ export function ComposeForm({
           className="flex-1 outline-none bg-transparent"
         />
       </label>
+
+      <div className="flex items-center gap-3">
+        <MicButton
+          submit={voiceToEmailAction}
+          disabled={sendDisabled}
+          onError={(msg) => setStatus({ state: "error", message: msg })}
+          onTranscribed={({ subject: s, html }) => {
+            if (!subject.trim() && s) setSubject(s);
+            const base = initialHtml
+              ? `${html}<p></p>${initialHtml}`
+              : html;
+            setBodyHtml(base);
+            setStatus({ state: "idle" });
+          }}
+        />
+        <span className="text-xs text-gray-500">
+          Dictate an email — we'll transcribe and polish it.
+        </span>
+      </div>
 
       <Editor value={bodyHtml} onChange={setBodyHtml} />
 

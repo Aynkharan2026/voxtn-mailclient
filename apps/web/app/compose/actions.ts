@@ -16,6 +16,10 @@ export type CancelResult =
   | { ok: true; jobId: string }
   | { ok: false; error: string; alreadyProcessing?: boolean };
 
+export type VoiceToEmailResult =
+  | { ok: true; subject: string; html: string }
+  | { ok: false; error: string };
+
 export async function sendEmailAction(
   payload: ComposePayload,
 ): Promise<SendResult> {
@@ -71,6 +75,41 @@ export async function sendEmailAction(
     }
     const data = (await res.json()) as { messageId: string; jobId: string };
     return { ok: true, messageId: data.messageId, jobId: data.jobId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function voiceToEmailAction(
+  formData: FormData,
+): Promise<VoiceToEmailResult> {
+  const base = process.env.AI_BRIDGE_URL;
+  const token = process.env.INTERNAL_SERVICE_TOKEN;
+  if (!base || !token) {
+    return { ok: false, error: "server not configured" };
+  }
+  const audio = formData.get("audio");
+  if (!(audio instanceof Blob)) {
+    return { ok: false, error: "no audio blob in form data" };
+  }
+  const upload = new FormData();
+  upload.append("audio", audio, "voice.webm");
+  try {
+    const res = await fetch(`${base}/voice-to-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: upload,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      return { ok: false, error: `voxmail-ai ${res.status}: ${detail}` };
+    }
+    const data = (await res.json()) as { subject: string; html: string };
+    return { ok: true, subject: data.subject, html: data.html };
   } catch (err) {
     return {
       ok: false,

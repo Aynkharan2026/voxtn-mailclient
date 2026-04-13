@@ -47,6 +47,11 @@ services:
       - "127.0.0.1:4002:4002"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # Read-only access to the sibling tamiltts-saas project for its
+      # TamilTextProcessor pipeline (see voice.py). Falls back to pass-through
+      # if the mount isn't present (local dev).
+      - /opt/tamiltts-saas:/mnt/tamiltts-saas:ro
     healthcheck:
       test:
         - CMD
