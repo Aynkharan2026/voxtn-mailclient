@@ -42,36 +42,32 @@ status=$(curl -sS -X POST "$BASE/campaigns" \
     -o "$TMP" -w '%{http_code}')
 check_status "POST /campaigns missing recipients → 400" 400 "$status"
 
-# 3. happy path — 3 recipients, bogus SMTP
+# 3. happy path with 2 distinct recipients + 1 case-variant duplicate of the
+#    first; we expect the server to dedupe to 2 queued emails.
 status=$(curl -sS -X POST "$BASE/campaigns" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
     -d '{
         "subject":"VoxMail campaign integration test",
         "html":"<p>this is a test</p>",
-        "recipients":["alice+itest@example.test","Bob+Itest@example.test","carol+itest@example.test"],
+        "recipients":["alice+itest@example.test","ALICE+ITEST@EXAMPLE.TEST","bob+itest@example.test"],
         "smtp":{"host":"localhost","port":1,"secure":false,"user":"itest@example.test","pass":"y"}
     }' \
     -o "$TMP" -w '%{http_code}')
-check_status "POST /campaigns 3 recipients → 201" 201 "$status"
+check_status "POST /campaigns 3 input → 2 queued (case-insensitive dedupe) → 201" 201 "$status"
 
 CAMPAIGN_ID=$(sed -n 's/.*"campaignId":"\([^"]*\)".*/\1/p' "$TMP")
 QUEUED=$(sed -n 's/.*"queued":\([0-9]*\).*/\1/p' "$TMP")
 echo "campaignId=$CAMPAIGN_ID queued=$QUEUED"
 
-# 4. case-insensitive dedupe should collapse alice + Alice → 2 unique
-if [ "$QUEUED" = "2" ] || [ "$QUEUED" = "3" ]; then
-    # alice and Alice (both lowercased to alice+itest) should dedupe → 2
-    if [ "$QUEUED" = "2" ]; then
-        echo "--- dedupe test: alice == Alice ---"
-        echo "PASS (queued=2)"
-        pass=$((pass + 1))
-    else
-        echo "--- dedupe test: alice == Alice ---"
-        echo "FAIL (expected 2, got 3)"
-        fail=$((fail + 1))
-    fi
-    echo
+echo "--- case-insensitive dedupe ---"
+if [ "$QUEUED" = "2" ]; then
+    echo "PASS (queued=2, alice and ALICE collapsed)"
+    pass=$((pass + 1))
+else
+    echo "FAIL (expected 2, got $QUEUED)"
+    fail=$((fail + 1))
 fi
+echo
 
 # 5. verify DB rows via psql-on-server (counts only — no PII in output)
 echo "--- DB verification via ssh ---"
