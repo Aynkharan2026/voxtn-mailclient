@@ -35,13 +35,22 @@ pass=0
 fail=0
 
 urlencode() {
-    python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$1"
+    # Pure-bash percent-encoding for query-string values. Portable across
+    # Windows Git Bash, macOS, Linux without needing a python interpreter.
+    local s="$1" i c out=""
+    for (( i=0; i<${#s}; i++ )); do
+        c="${s:$i:1}"
+        case "$c" in
+            [a-zA-Z0-9._~-]) out+="$c" ;;
+            *) printf -v c '%%%02X' "'$c"; out+="$c" ;;
+        esac
+    done
+    printf '%s' "$out"
 }
 
 run_case() {
     local name="$1" expected="$2"; shift 2
     echo "--- $name ---"
-    echo "curl $*"
     local status
     status=$(curl -sS -o "$TMP_BODY" -w '%{http_code}' "$@" || echo "000")
     echo "status: $status"
