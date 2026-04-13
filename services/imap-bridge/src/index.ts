@@ -9,7 +9,7 @@ const logger = pino({
 const app = Fastify({ loggerInstance: logger });
 
 app.get('/health', async () => ({
-  service: 'nexamail-imap',
+  service: 'voxmail-imap',
   status: 'ok',
   time: new Date().toISOString(),
 }));

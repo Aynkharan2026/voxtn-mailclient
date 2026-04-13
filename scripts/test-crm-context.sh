@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test for GET /crm/context on the live nexamail-ai service.
+# End-to-end test for GET /crm/context on the live voxmail-ai service.
 #
 # Usage:
 #   bash scripts/test-crm-context.sh
@@ -8,7 +8,7 @@
 #   .env at repo root with INTERNAL_SERVICE_TOKEN set.
 #   curl available.
 #
-# Override base URL with:  NEXAMAIL_AI_URL=https://... bash scripts/test-crm-context.sh
+# Override base URL with:  VOXMAIL_AI_URL=https://... bash scripts/test-crm-context.sh
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ if [ -z "$TOKEN" ]; then
     exit 2
 fi
 
-BASE="${NEXAMAIL_AI_URL:-https://ai.nexamail.voxtn.com}"
+BASE="${VOXMAIL_AI_URL:-https://ai.nexamail.voxtn.com}"
 TMP_BODY="$(mktemp)"
 trap 'rm -f "$TMP_BODY"' EXIT
 

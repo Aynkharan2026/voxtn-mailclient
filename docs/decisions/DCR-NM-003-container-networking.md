@@ -6,12 +6,12 @@
 
 ## Context
 
-NexaMail services (`imap-bridge`, `ai-bridge`) are containerized and deployed to the shared Hetzner host (SSH alias `nexamail`). On that host:
+VoxMail services (`imap-bridge`, `ai-bridge`) are containerized and deployed to the shared Hetzner host (SSH alias `nexamail`). On that host:
 
 - PostgreSQL 16 and Redis 7 are installed at the OS level and bind to `127.0.0.1` only.
 - Several other tenants (Aravam Tune, VoxTN CMS/Platform, Umami, etc.) are already running on this host — some as systemd services, some as containers. Public HTTP(S) is terminated by the host-level nginx.
 
-We need containerized NexaMail services to:
+We need containerized VoxMail services to:
 
 1. Reach the host's Postgres and Redis without reconfiguring them to listen on a bridge interface or `0.0.0.0` (which would weaken isolation for every tenant on the box).
 2. Use the same DB/Redis connection strings in local development (Docker Desktop on Windows/Mac) as on the Hetzner host, so `.env` doesn't need per-environment rewrites.

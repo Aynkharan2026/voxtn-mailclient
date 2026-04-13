@@ -1,8 +1,8 @@
-# NexaMail
+# VoxMail
 
 **AI-powered white-label mail client.** A [VoxTN](https://voxtn.example) product, operated by 17488149 CANADA CORP.
 
-NexaMail connects to any IMAP/SMTP mail server and layers AI-assisted triage, summarization, drafting, and scheduling on top — without locking users to a specific provider.
+VoxMail connects to any IMAP/SMTP mail server and layers AI-assisted triage, summarization, drafting, and scheduling on top — without locking users to a specific provider.
 
 ## Monorepo layout
 

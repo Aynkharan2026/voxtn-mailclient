@@ -1,7 +1,7 @@
 [project]
-name = "nexamail-ai"
+name = "voxmail-ai"
 version = "0.1.0"
-description = "NexaMail AI service"
+description = "VoxMail AI service"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",

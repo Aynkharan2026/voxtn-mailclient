@@ -1,4 +1,4 @@
-# apps/web — NexaMail frontend
+# apps/web — VoxMail frontend
 
 **Stack:** Next.js 15 (App Router) + React + TypeScript + Tailwind
 **Host:** Vercel

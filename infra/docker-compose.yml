@@ -1,6 +1,6 @@
-name: nexamail
+name: voxmail
 
-# NexaMail service stack.
+# VoxMail service stack.
 #
 # Runs on the shared Hetzner host (ssh alias: nexamail). Host Postgres
 # and Redis are reached via host.docker.internal — on Linux this must
@@ -15,8 +15,8 @@ services:
   imap-bridge:
     build:
       context: ../services/imap-bridge
-    image: nexamail/imap-bridge:0.1.0
-    container_name: nexamail-imap
+    image: voxmail/imap-bridge:0.1.0
+    container_name: voxmail-imap
     restart: unless-stopped
     env_file:
       - ../.env
@@ -38,8 +38,8 @@ services:
   ai-bridge:
     build:
       context: ../services/ai-bridge
-    image: nexamail/ai-bridge:0.1.0
-    container_name: nexamail-ai
+    image: voxmail/ai-bridge:0.1.0
+    container_name: voxmail-ai
     restart: unless-stopped
     env_file:
       - ../.env

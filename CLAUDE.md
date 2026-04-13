@@ -1,12 +1,12 @@
-# NexaMail — VoxTN
+# VoxMail — VoxTN
 
-**Product:** NexaMail — AI-powered white-label mail client
+**Product:** VoxMail — AI-powered white-label mail client
 **Operator:** VoxTN (17488149 CANADA CORP)
 **Repo:** voxtn-mailclient
 
 ## Identity
 
-- Brand name: **NexaMail**
+- Brand name: **VoxMail**
 - Parent: **VoxTN**, a product brand of **17488149 CANADA CORP**
 - Primary colors:
   - Navy: `#0d1b2e`

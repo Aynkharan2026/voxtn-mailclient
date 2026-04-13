@@ -2,7 +2,7 @@
 
 **Stack:** Node.js + TypeScript + [imapflow](https://imapflow.com/) + nodemailer
 **Host:** Hetzner (Docker)
-**Role:** Bridge between NexaMail and users' mail providers. Handles IMAP fetch/sync, folder ops, SMTP send, IDLE push.
+**Role:** Bridge between VoxMail and users' mail providers. Handles IMAP fetch/sync, folder ops, SMTP send, IDLE push.
 
 ## Responsibilities
 
