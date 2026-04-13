@@ -11,6 +11,10 @@ const config: Config = {
         brand: {
           navy: "#0d1b2e",
           amber: "#f59e0b",
+          // Whitelabel-configurable primary. layout.tsx sets the CSS
+          // variable from the current tenant's primary_color; fallback is
+          // VoxTN's amber.
+          primary: "var(--brand-primary, #f59e0b)",
         },
       },
     },

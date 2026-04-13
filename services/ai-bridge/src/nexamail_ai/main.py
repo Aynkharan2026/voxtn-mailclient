@@ -12,6 +12,7 @@ from .crm import router as crm_router
 from .db import close_pool, init_pool
 from .realtime import sio
 from .signatures import router as signatures_router
+from .tenants import router as tenants_router
 from .tracking import router as tracking_router
 from .voice import router as voice_router
 
@@ -36,6 +37,7 @@ fastapi_app.include_router(voice_router)
 fastapi_app.include_router(tracking_router)
 fastapi_app.include_router(billing_router)
 fastapi_app.include_router(webhook_router)
+fastapi_app.include_router(tenants_router)
 
 
 class HealthResponse(BaseModel):
