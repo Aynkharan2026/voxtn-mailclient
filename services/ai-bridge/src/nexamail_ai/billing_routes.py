@@ -14,6 +14,9 @@ anchor.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
@@ -53,22 +56,48 @@ async def stripe_webhook(
 
     payload = await request.body()
 
-    try:
-        event = stripe.Webhook.construct_event(
-            payload,
-            stripe_signature,
-            settings.stripe_webhook_secret,
+    # Manual signature verification (avoids stripe.Webhook.construct_event's
+    # strict Event-schema reconstruction, which rejects minimal synthetic
+    # payloads). Same HMAC-SHA256 scheme Stripe's SDK uses.
+    timestamp: str | None = None
+    v1_sigs: list[str] = []
+    for part in stripe_signature.split(","):
+        if "=" not in part:
+            continue
+        k, _, v = part.partition("=")
+        k = k.strip()
+        v = v.strip()
+        if k == "t":
+            timestamp = v
+        elif k == "v1":
+            v1_sigs.append(v)
+
+    if not timestamp or not v1_sigs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="malformed Stripe-Signature header",
         )
-    except stripe.SignatureVerificationError:
+
+    signed_payload = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
+    expected = hmac.new(
+        settings.stripe_webhook_secret.encode("utf-8"),
+        signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not any(hmac.compare_digest(expected, s) for s in v1_sigs):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid Stripe signature",
         )
-    except Exception as exc:  # noqa: BLE001
+
+    try:
+        event: dict[str, Any] = json.loads(payload)
+    except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"invalid webhook payload: {exc}",
-        )
+            detail=f"invalid JSON payload: {exc}",
+        ) from exc
 
     event_type = event.get("type")
     data_object = event.get("data", {}).get("object", {}) or {}
