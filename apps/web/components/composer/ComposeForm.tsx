@@ -15,12 +15,16 @@ type Status =
 const UNDO_WINDOW_SECONDS = 10;
 const AUTO_DISMISS_MS = 3000;
 
-export function ComposeForm() {
+export function ComposeForm({
+  initialHtml = "",
+}: {
+  initialHtml?: string;
+}) {
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
   const [subject, setSubject] = useState("");
-  const [bodyHtml, setBodyHtml] = useState("");
+  const [bodyHtml, setBodyHtml] = useState(initialHtml);
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [status, setStatus] = useState<Status>({ state: "idle" });
   const [isPending, startTransition] = useTransition();
@@ -51,7 +55,7 @@ export function ComposeForm() {
     setCc("");
     setBcc("");
     setSubject("");
-    setBodyHtml("");
+    setBodyHtml(initialHtml);
   };
 
   const scheduleDismiss = () => {

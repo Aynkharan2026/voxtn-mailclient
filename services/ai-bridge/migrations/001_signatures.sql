@@ -23,3 +23,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS signatures_one_default_per_owner
 -- Lookup by owner (common list / get-default path).
 CREATE INDEX IF NOT EXISTS signatures_owner_email_idx
     ON signatures (owner_email);
+
+-- Migration runs as postgres (superuser); the app connects as nexamail_user.
+-- Transfer ownership so the app can CRUD without explicit grants.
+ALTER TABLE signatures OWNER TO nexamail_user;
