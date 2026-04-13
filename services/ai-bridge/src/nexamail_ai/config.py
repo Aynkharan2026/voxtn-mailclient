@@ -7,6 +7,7 @@ class Settings:
     internal_service_token: str
     voxtn_platform_api_url: str
     voxtn_platform_api_key: str
+    database_url: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -16,6 +17,7 @@ class Settings:
                 "VOXTN_PLATFORM_API_URL", "http://host.docker.internal:8011"
             ),
             voxtn_platform_api_key=os.environ.get("VOXTN_PLATFORM_API_KEY", ""),
+            database_url=os.environ.get("DATABASE_URL", ""),
         )
 
 
