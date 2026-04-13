@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Editor } from "./Editor";
+import { Editor, type EditorHandle } from "./Editor";
 import { MicButton } from "./MicButton";
 import {
   cancelSendAction,
@@ -37,6 +37,31 @@ export function ComposeForm({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorRef = useRef<EditorHandle | null>(null);
+  const [insertingBooking, setInsertingBooking] = useState(false);
+
+  const handleInsertBookingLink = async () => {
+    setInsertingBooking(true);
+    try {
+      const res = await fetch("/api/cal/booking-url", { cache: "no-store" });
+      if (!res.ok) {
+        const detail = await res.text();
+        setStatus({ state: "error", message: `booking URL: ${res.status} ${detail}` });
+        return;
+      }
+      const { url } = (await res.json()) as { url: string };
+      const escaped = url.replace(/"/g, "&quot;");
+      const html = `<a href="${escaped}">📅 Book a time with me</a>&nbsp;`;
+      editorRef.current?.insertHtml(html);
+    } catch (err) {
+      setStatus({
+        state: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setInsertingBooking(false);
+    }
+  };
 
   const clearTimers = () => {
     if (timeoutRef.current) {
@@ -184,7 +209,7 @@ export function ComposeForm({
         />
       </label>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <MicButton
           submit={voiceToEmailAction}
           disabled={sendDisabled}
@@ -198,12 +223,18 @@ export function ComposeForm({
             setStatus({ state: "idle" });
           }}
         />
-        <span className="text-xs text-gray-500">
-          Dictate an email — we'll transcribe and polish it.
-        </span>
+        <button
+          type="button"
+          onClick={handleInsertBookingLink}
+          disabled={sendDisabled || insertingBooking}
+          className="px-3 py-2 rounded border border-gray-300 text-brand-navy hover:bg-gray-50 font-medium disabled:opacity-50 flex items-center gap-2 text-sm"
+        >
+          <span>📅</span>
+          <span>{insertingBooking ? "Inserting…" : "Insert Booking Link"}</span>
+        </button>
       </div>
 
-      <Editor value={bodyHtml} onChange={setBodyHtml} />
+      <Editor ref={editorRef} value={bodyHtml} onChange={setBodyHtml} />
 
       {status.state === "error" && (
         <div className="text-sm text-red-700">Error: {status.message}</div>

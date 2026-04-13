@@ -8,15 +8,20 @@ import {
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect } from "react";
+import { useEffect, useImperativeHandle } from "react";
+
+export type EditorHandle = {
+  insertHtml: (html: string) => void;
+};
 
 type EditorProps = {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  ref?: React.Ref<EditorHandle>;
 };
 
-export function Editor({ value, onChange, placeholder }: EditorProps) {
+export function Editor({ value, onChange, placeholder, ref }: EditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -48,6 +53,16 @@ export function Editor({ value, onChange, placeholder }: EditorProps) {
       editor.commands.setContent(value, false);
     }
   }, [value, editor]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertHtml: (html: string) => {
+        editor?.chain().focus().insertContent(html).run();
+      },
+    }),
+    [editor],
+  );
 
   if (!editor) {
     return <div className="text-gray-400">Loading editor…</div>;
