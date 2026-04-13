@@ -60,7 +60,7 @@ export const sendRoutes: FastifyPluginAsync = async (app) => {
     return { messageId, jobId: job.id };
   });
 
-  app.post('/send/cancel', async (request, reply) => {
+  app.delete('/send/cancel', async (request, reply) => {
     const parsed = cancelQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'missing jobId' });

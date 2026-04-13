@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Editor } from "./Editor";
-import { sendEmailAction } from "@/app/compose/actions";
+import { cancelSendAction, sendEmailAction } from "@/app/compose/actions";
 
 type Status =
   | { state: "idle" }
   | { state: "sending" }
-  | { state: "sent"; jobId: string; messageId: string }
+  | { state: "pending"; jobId: string; secondsLeft: number }
+  | { state: "sent" }
+  | { state: "unsent" }
   | { state: "error"; message: string };
+
+const UNDO_WINDOW_SECONDS = 10;
+const AUTO_DISMISS_MS = 3000;
 
 export function ComposeForm() {
   const [to, setTo] = useState("");
@@ -20,11 +25,48 @@ export function ComposeForm() {
   const [status, setStatus] = useState<Status>({ state: "idle" });
   const [isPending, startTransition] = useTransition();
 
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimers = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (dismissRef.current) {
+      clearTimeout(dismissRef.current);
+      dismissRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearTimers(), []);
+
+  const clearForm = () => {
+    setTo("");
+    setCc("");
+    setBcc("");
+    setSubject("");
+    setBodyHtml("");
+  };
+
+  const scheduleDismiss = () => {
+    dismissRef.current = setTimeout(
+      () => setStatus({ state: "idle" }),
+      AUTO_DISMISS_MS,
+    );
+  };
+
   const handleSend = () => {
     if (!to.trim()) {
       setStatus({ state: "error", message: "Add at least one recipient" });
       return;
     }
+    clearTimers();
     setStatus({ state: "sending" });
     startTransition(async () => {
       const res = await sendEmailAction({
@@ -34,28 +76,56 @@ export function ComposeForm() {
         subject,
         html: bodyHtml,
       });
+      if (!res.ok) {
+        setStatus({ state: "error", message: res.error });
+        return;
+      }
+      clearForm();
+      const { jobId } = res;
+      setStatus({ state: "pending", jobId, secondsLeft: UNDO_WINDOW_SECONDS });
+      intervalRef.current = setInterval(() => {
+        setStatus((prev) =>
+          prev.state === "pending"
+            ? { ...prev, secondsLeft: Math.max(0, prev.secondsLeft - 1) }
+            : prev,
+        );
+      }, 1000);
+      timeoutRef.current = setTimeout(() => {
+        clearTimers();
+        setStatus({ state: "sent" });
+        scheduleDismiss();
+      }, UNDO_WINDOW_SECONDS * 1000);
+    });
+  };
+
+  const handleUndo = () => {
+    if (status.state !== "pending") return;
+    const jobId = status.jobId;
+    clearTimers();
+    setStatus({ state: "sending" });
+    startTransition(async () => {
+      const res = await cancelSendAction(jobId);
       if (res.ok) {
-        setStatus({
-          state: "sent",
-          jobId: res.jobId,
-          messageId: res.messageId,
-        });
+        setStatus({ state: "unsent" });
+      } else if (res.alreadyProcessing) {
+        // Raced the server — the mail has gone. Show sent instead of error.
+        setStatus({ state: "sent" });
       } else {
         setStatus({ state: "error", message: res.error });
+        return;
       }
+      scheduleDismiss();
     });
   };
 
   const handleDiscard = () => {
-    setTo("");
-    setCc("");
-    setBcc("");
-    setSubject("");
-    setBodyHtml("");
+    clearTimers();
+    clearForm();
     setStatus({ state: "idle" });
   };
 
-  const sending = isPending || status.state === "sending";
+  const sendDisabled =
+    isPending || status.state === "sending" || status.state === "pending";
 
   return (
     <div className="flex flex-col gap-4">
@@ -107,13 +177,15 @@ export function ComposeForm() {
 
       <Editor value={bodyHtml} onChange={setBodyHtml} />
 
-      <StatusLine status={status} />
+      {status.state === "error" && (
+        <div className="text-sm text-red-700">Error: {status.message}</div>
+      )}
 
       <div className="flex justify-end gap-2">
         <button
           type="button"
           onClick={handleDiscard}
-          disabled={sending}
+          disabled={sendDisabled}
           className="px-4 py-2 text-gray-600 hover:text-brand-navy disabled:opacity-50"
         >
           Discard
@@ -121,29 +193,70 @@ export function ComposeForm() {
         <button
           type="button"
           onClick={handleSend}
-          disabled={sending}
+          disabled={sendDisabled}
           className="px-5 py-2 rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition disabled:opacity-50"
         >
-          {sending ? "Sending…" : "Send"}
+          {status.state === "sending" ? "Sending…" : "Send"}
         </button>
       </div>
+
+      <Toast status={status} onUndo={handleUndo} />
     </div>
   );
 }
 
-function StatusLine({ status }: { status: Status }) {
-  if (status.state === "idle") return null;
-  if (status.state === "sending") {
-    return <div className="text-sm text-gray-500">Queueing send…</div>;
+function Toast({
+  status,
+  onUndo,
+}: {
+  status: Status;
+  onUndo: () => void;
+}) {
+  if (
+    status.state !== "pending" &&
+    status.state !== "sent" &&
+    status.state !== "unsent"
+  ) {
+    return null;
   }
-  if (status.state === "sent") {
+
+  const base =
+    "fixed bottom-6 left-1/2 -translate-x-1/2 rounded shadow-lg px-4 py-3 flex items-center gap-4 text-sm z-50";
+
+  if (status.state === "pending") {
     return (
-      <div className="text-sm text-green-700">
-        Queued. Sends in 10s. job <code className="font-mono">{status.jobId}</code>
+      <div
+        className={`${base} bg-brand-navy text-white`}
+        role="status"
+        aria-live="polite"
+      >
+        <span>
+          Sending in <strong>{status.secondsLeft}s</strong>…
+        </span>
+        <button
+          type="button"
+          onClick={onUndo}
+          className="text-brand-amber font-semibold hover:underline"
+        >
+          Undo
+        </button>
       </div>
     );
   }
-  return <div className="text-sm text-red-700">Error: {status.message}</div>;
+
+  if (status.state === "sent") {
+    return (
+      <div className={`${base} bg-green-700 text-white`} role="status">
+        Sent ✓
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${base} bg-gray-700 text-white`} role="status">
+      Message unsent
+    </div>
+  );
 }
 
 function RecipientRow({

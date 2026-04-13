@@ -12,6 +12,10 @@ export type SendResult =
   | { ok: true; messageId: string; jobId: string }
   | { ok: false; error: string };
 
+export type CancelResult =
+  | { ok: true; jobId: string }
+  | { ok: false; error: string; alreadyProcessing?: boolean };
+
 export async function sendEmailAction(
   payload: ComposePayload,
 ): Promise<SendResult> {
@@ -67,6 +71,40 @@ export async function sendEmailAction(
     }
     const data = (await res.json()) as { messageId: string; jobId: string };
     return { ok: true, messageId: data.messageId, jobId: data.jobId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function cancelSendAction(
+  jobId: string,
+): Promise<CancelResult> {
+  const base = process.env.IMAP_BRIDGE_URL;
+  const token = process.env.INTERNAL_SERVICE_TOKEN;
+  if (!base || !token) {
+    return { ok: false, error: "server not configured" };
+  }
+  try {
+    const res = await fetch(
+      `${base}/send/cancel?jobId=${encodeURIComponent(jobId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      },
+    );
+    if (res.status === 409) {
+      const detail = await res.text();
+      return { ok: false, error: detail, alreadyProcessing: true };
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      return { ok: false, error: `voxmail-imap ${res.status}: ${detail}` };
+    }
+    return { ok: true, jobId };
   } catch (err) {
     return {
       ok: false,
