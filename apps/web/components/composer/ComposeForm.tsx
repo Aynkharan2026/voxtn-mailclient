@@ -50,8 +50,10 @@ export function ComposeForm({
         return;
       }
       const { url } = (await res.json()) as { url: string };
-      const escaped = url.replace(/"/g, "&quot;");
-      const html = `<a href="${escaped}">📅 Book a time with me</a>&nbsp;`;
+      const escapedHref = url.replace(/"/g, "&quot;");
+      const style =
+        "background:#f59e0b;color:#0d1b2e;padding:8px 16px;border-radius:4px;text-decoration:none;font-weight:600;";
+      const html = `<a href="${escapedHref}" style="${style}">📅 Book a time with me</a>`;
       editorRef.current?.insertHtml(html);
     } catch (err) {
       setStatus({

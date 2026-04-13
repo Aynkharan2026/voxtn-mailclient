@@ -10,6 +10,27 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useImperativeHandle } from "react";
 
+// Extend the Link mark so inline `style` attributes survive the parse/render
+// round-trip. Email clients strip <style> tags but respect inline styles, so
+// we need the style attribute to reach the outbound HTML intact — this is how
+// the "Insert Booking Link" button's amber/navy button survives into the sent
+// email.
+const LinkWithStyle = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      style: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("style"),
+        renderHTML: (attributes) => {
+          const style = (attributes as { style?: string | null }).style;
+          return style ? { style } : {};
+        },
+      },
+    };
+  },
+});
+
 export type EditorHandle = {
   insertHtml: (html: string) => void;
 };
@@ -26,7 +47,7 @@ export function Editor({ value, onChange, placeholder, ref }: EditorProps) {
     immediatelyRender: false,
     extensions: [
       StarterKit,
-      Link.configure({
+      LinkWithStyle.configure({
         openOnClick: false,
         autolink: true,
         HTMLAttributes: { class: "text-brand-amber underline" },
