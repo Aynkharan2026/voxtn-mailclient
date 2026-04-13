@@ -43,6 +43,12 @@ const fetchMessagesBodySchema = z.object({
   requested_by: z.string().email().optional(),
 });
 
+const transferOwnershipBodySchema = z.object({
+  from_email: z.string().email(),
+  to_email: z.string().email(),
+  requester_email: z.string().email(),
+});
+
 function lowercaseArray(arr: string[] | undefined): string[] {
   return (arr ?? []).map((e) => e.trim().toLowerCase());
 }
@@ -263,6 +269,105 @@ export const sharedInboxRoutes: FastifyPluginAsync = async (app) => {
           .code(502)
           .send({ error: 'imap fetch failed', detail: msg });
       }
+    },
+  );
+
+  // -----------------------------------------------------------------
+  // POST /shared-inboxes/:id/transfer-ownership — supervisor only
+  // -----------------------------------------------------------------
+  app.post<{ Params: { id: string } }>(
+    '/shared-inboxes/:id/transfer-ownership',
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!parseUuidOr404(id, reply)) return;
+
+      const parsed = transferOwnershipBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'invalid payload',
+          details: parsed.error.format(),
+        });
+      }
+      const fromEmail = parsed.data.from_email.trim().toLowerCase();
+      const toEmail = parsed.data.to_email.trim().toLowerCase();
+      const requester = parsed.data.requester_email.trim().toLowerCase();
+
+      if (fromEmail === toEmail) {
+        return reply
+          .code(400)
+          .send({ error: 'from_email and to_email are identical' });
+      }
+
+      const inbox = await loadInbox(id);
+      if (!inbox) return reply.code(404).send({ error: 'shared inbox not found' });
+
+      if (!inbox.supervisor_emails.includes(requester)) {
+        return reply
+          .code(403)
+          .send({ error: 'requester is not a supervisor of this inbox' });
+      }
+
+      const client = await pool.connect();
+      let transferredCampaigns = 0;
+      try {
+        await client.query('BEGIN');
+
+        // Transfer ownership of OPEN campaigns (sending/draft) owned by
+        // from_email. campaigns table has owner_email but no direct
+        // sharedInboxId link; the supervisor check above is the trust gate.
+        const upd = await client.query(
+          `UPDATE campaigns
+              SET owner_email = $1
+            WHERE owner_email = $2
+              AND status IN ('sending', 'draft')`,
+          [toEmail, fromEmail],
+        );
+        transferredCampaigns = upd.rowCount ?? 0;
+
+        // Swap the rep in assigned_rep_emails: remove from_email, add
+        // to_email idempotently.
+        await client.query(
+          `UPDATE shared_inboxes
+              SET assigned_rep_emails = CASE
+                WHEN $2 = ANY(array_remove(assigned_rep_emails, $1))
+                  THEN array_remove(assigned_rep_emails, $1)
+                  ELSE array_append(array_remove(assigned_rep_emails, $1), $2)
+                END
+            WHERE id = $3`,
+          [fromEmail, toEmail, id],
+        );
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      // audit_log is append-only (DELETE + UPDATE + TRUNCATE all blocked
+      // by triggers as of migration 005). We do NOT rewrite historical
+      // audit rows; we INSERT a transfer event so the trail is additive.
+      await logAudit({
+        ownerEmail: requester,
+        action: 'ownership_transferred',
+        payload: {
+          sharedInboxId: id,
+          from: fromEmail,
+          to: toEmail,
+          requester,
+          transferredCampaigns,
+        },
+        ipAddress: request.ip,
+      });
+
+      return reply.code(200).send({
+        ok: true,
+        sharedInboxId: id,
+        from: fromEmail,
+        to: toEmail,
+        transferredCampaigns,
+      });
     },
   );
 
