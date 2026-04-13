@@ -63,7 +63,7 @@ async def track_event(
                 (message_id, event_type, redirect_url, user_agent, ip)
             VALUES ($1, $2, $3, $4, $5::inet)
             RETURNING id, message_id, event_type, redirect_url,
-                      user_agent, ip::text AS ip, created_at
+                      user_agent, host(ip) AS ip, created_at
             """,
             body.message_id,
             body.event_type,
