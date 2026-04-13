@@ -56,11 +56,21 @@ export function startSendWorker(): Worker<SendJobData> {
     QUEUE_NAME,
     async (job: Job<SendJobData>) => {
       const { smtp, message } = job.data;
+      // DCR-NM-011: STARTTLS on port 587 via the VoxTN Mailcow relay.
+      // Transport config comes from env (SMTP_HOST/PORT/USER/PASS); the
+      // `smtp` field on the job data is retained only so message.from /
+      // audit payloads keep referencing the caller's intended identity,
+      // but is no longer used for transport auth.
       const transport = createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        auth: { user: smtp.user, pass: smtp.pass },
+        host: process.env.SMTP_HOST || '208.79.219.189',
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: false,
+        requireTLS: true,
+        tls: { rejectUnauthorized: false },
+        auth: {
+          user: process.env.SMTP_USER || smtp.user,
+          pass: process.env.SMTP_PASS || smtp.pass,
+        },
       });
       try {
         const info = await transport.sendMail({
@@ -176,11 +186,21 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
       const token = signUnsubscribeToken(recipientEmail, ownerEmail);
       const finalHtml = appendUnsubscribeFooter(message.html, token);
 
+      // DCR-NM-011: STARTTLS on port 587 via the VoxTN Mailcow relay.
+      // Transport config comes from env (SMTP_HOST/PORT/USER/PASS); the
+      // `smtp` field on the job data is retained only so message.from /
+      // audit payloads keep referencing the caller's intended identity,
+      // but is no longer used for transport auth.
       const transport = createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        auth: { user: smtp.user, pass: smtp.pass },
+        host: process.env.SMTP_HOST || '208.79.219.189',
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: false,
+        requireTLS: true,
+        tls: { rejectUnauthorized: false },
+        auth: {
+          user: process.env.SMTP_USER || smtp.user,
+          pass: process.env.SMTP_PASS || smtp.pass,
+        },
       });
 
       try {
