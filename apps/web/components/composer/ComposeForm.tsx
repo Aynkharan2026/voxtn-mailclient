@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Editor } from "./Editor";
+import { sendEmailAction } from "@/app/compose/actions";
 
-type Draft = {
-  to: string;
-  cc: string;
-  bcc: string;
-  subject: string;
-  bodyHtml: string;
-};
+type Status =
+  | { state: "idle" }
+  | { state: "sending" }
+  | { state: "sent"; jobId: string; messageId: string }
+  | { state: "error"; message: string };
 
 export function ComposeForm() {
   const [to, setTo] = useState("");
@@ -18,13 +17,33 @@ export function ComposeForm() {
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [showCcBcc, setShowCcBcc] = useState(false);
+  const [status, setStatus] = useState<Status>({ state: "idle" });
+  const [isPending, startTransition] = useTransition();
 
   const handleSend = () => {
-    const draft: Draft = { to, cc, bcc, subject, bodyHtml };
-    // Wired in Phase 3.2 — POST to voxmail-imap /send via server action.
-    // eslint-disable-next-line no-console
-    console.log("draft", draft);
-    window.alert("Send is not wired yet — see console for the draft payload.");
+    if (!to.trim()) {
+      setStatus({ state: "error", message: "Add at least one recipient" });
+      return;
+    }
+    setStatus({ state: "sending" });
+    startTransition(async () => {
+      const res = await sendEmailAction({
+        to,
+        cc: cc || undefined,
+        bcc: bcc || undefined,
+        subject,
+        html: bodyHtml,
+      });
+      if (res.ok) {
+        setStatus({
+          state: "sent",
+          jobId: res.jobId,
+          messageId: res.messageId,
+        });
+      } else {
+        setStatus({ state: "error", message: res.error });
+      }
+    });
   };
 
   const handleDiscard = () => {
@@ -33,7 +52,10 @@ export function ComposeForm() {
     setBcc("");
     setSubject("");
     setBodyHtml("");
+    setStatus({ state: "idle" });
   };
+
+  const sending = isPending || status.state === "sending";
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,24 +107,43 @@ export function ComposeForm() {
 
       <Editor value={bodyHtml} onChange={setBodyHtml} />
 
+      <StatusLine status={status} />
+
       <div className="flex justify-end gap-2">
         <button
           type="button"
           onClick={handleDiscard}
-          className="px-4 py-2 text-gray-600 hover:text-brand-navy"
+          disabled={sending}
+          className="px-4 py-2 text-gray-600 hover:text-brand-navy disabled:opacity-50"
         >
           Discard
         </button>
         <button
           type="button"
           onClick={handleSend}
-          className="px-5 py-2 rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition"
+          disabled={sending}
+          className="px-5 py-2 rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition disabled:opacity-50"
         >
-          Send
+          {sending ? "Sending…" : "Send"}
         </button>
       </div>
     </div>
   );
+}
+
+function StatusLine({ status }: { status: Status }) {
+  if (status.state === "idle") return null;
+  if (status.state === "sending") {
+    return <div className="text-sm text-gray-500">Queueing send…</div>;
+  }
+  if (status.state === "sent") {
+    return (
+      <div className="text-sm text-green-700">
+        Queued. Sends in 10s. job <code className="font-mono">{status.jobId}</code>
+      </div>
+    );
+  }
+  return <div className="text-sm text-red-700">Error: {status.message}</div>;
 }
 
 function RecipientRow({
