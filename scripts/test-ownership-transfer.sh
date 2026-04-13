@@ -67,11 +67,11 @@ curl -sS -X POST "$BASE/shared-inboxes/$INBOX_ID/assign" \
 CAMP1=$(ssh nexamail "sudo -u postgres psql -d nexamail -Atc \"
 INSERT INTO campaigns (owner_email, name, subject, html_body, status)
 VALUES ('$REP1', 'ot itest draft', 'x', '<p>x</p>', 'draft')
-RETURNING id\"" 2>&1)
+RETURNING id\"" 2>&1 | head -1)
 CAMP2=$(ssh nexamail "sudo -u postgres psql -d nexamail -Atc \"
 INSERT INTO campaigns (owner_email, name, subject, html_body, status)
 VALUES ('$REP1', 'ot itest complete', 'x', '<p>x</p>', 'complete')
-RETURNING id\"" 2>&1)
+RETURNING id\"" 2>&1 | head -1)
 echo "seeded campaigns: open=$CAMP1 complete=$CAMP2"
 echo
 
