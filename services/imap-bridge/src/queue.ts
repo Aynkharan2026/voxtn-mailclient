@@ -3,8 +3,13 @@ import IORedis from 'ioredis';
 import { createTransport } from 'nodemailer';
 import pino from 'pino';
 
+import { logAudit } from './audit.js';
 import { config } from './config.js';
 import { pool } from './db.js';
+import {
+  appendUnsubscribeFooter,
+  signUnsubscribeToken,
+} from './unsubscribe.js';
 
 const logger = pino({ level: config.logLevel, name: 'voxmail-imap.worker' });
 
@@ -87,7 +92,7 @@ export function startSendWorker(): Worker<SendJobData> {
 }
 
 // --------------------------------------------------------------------------
-// /campaigns queue (mass-send, rate-limited at 10/min, serial, idempotent)
+// /campaigns queue (mass-send, rate-limited, idempotent, CASL-aware)
 // --------------------------------------------------------------------------
 
 export const CAMPAIGN_QUEUE_NAME = 'voxmail.outbound.campaign';
@@ -99,6 +104,7 @@ export type CampaignJobData = {
   recipientId: string;
   smtp: SendJobData['smtp'];
   message: SendJobMessage;
+  ownerEmail: string;
 };
 
 export const campaignQueue = new Queue<CampaignJobData>(
@@ -107,9 +113,8 @@ export const campaignQueue = new Queue<CampaignJobData>(
 );
 
 async function finalizeCampaignStatus(campaignId: string): Promise<void> {
-  // Once no recipients remain in 'queued', transition 'sending' → terminal:
-  //   complete  if at least one was 'sent'
-  //   failed    otherwise
+  // Allow re-transition between sending/complete/failed as retries finish.
+  // Never disturb drafts.
   await pool.query(
     `UPDATE campaigns c
         SET status = CASE
@@ -119,7 +124,7 @@ async function finalizeCampaignStatus(campaignId: string): Promise<void> {
                  WHERE campaign_id = c.id AND status = 'sent') > 0 THEN 'complete'
           ELSE 'failed'
         END
-      WHERE c.id = $1 AND c.status = 'sending'`,
+      WHERE c.id = $1 AND c.status <> 'draft'`,
     [campaignId],
   );
 }
@@ -128,19 +133,48 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
   const worker = new Worker<CampaignJobData>(
     CAMPAIGN_QUEUE_NAME,
     async (job: Job<CampaignJobData>) => {
-      const { smtp, message, recipientId, campaignId } = job.data;
+      const { smtp, message, recipientId, campaignId, ownerEmail } = job.data;
+      const recipientEmail = message.to.toLowerCase();
 
-      // Idempotency guard: if a previous attempt already sent this recipient
-      // (e.g. after a worker crash between SMTP ACK and DB update), skip
-      // rather than sending a duplicate.
+      // --- idempotency: skip if we already sent this recipient --------------
       const prior = await pool.query<{ status: string }>(
         'SELECT status FROM campaign_recipients WHERE id = $1',
         [recipientId],
       );
       if (prior.rows[0]?.status === 'sent') {
         logger.info({ recipientId }, 'recipient already sent — skipping retry');
-        return { skipped: true };
+        return { skipped: 'already_sent' };
       }
+
+      // --- defense in depth: recheck unsubscribe list ----------------------
+      const unsub = await pool.query<{ email: string }>(
+        'SELECT email FROM unsubscribes WHERE email = $1',
+        [recipientEmail],
+      );
+      if (unsub.rows.length > 0) {
+        await pool.query(
+          `UPDATE campaign_recipients
+              SET status = 'failed', error_msg = $1
+            WHERE id = $2`,
+          ['recipient unsubscribed between enqueue and send', recipientId],
+        );
+        await logAudit({
+          ownerEmail,
+          action: 'email_failed',
+          payload: {
+            campaignId,
+            to: recipientEmail,
+            error: 'recipient unsubscribed between enqueue and send',
+          },
+          ipAddress: null,
+        });
+        await finalizeCampaignStatus(campaignId);
+        return { skipped: 'unsubscribed_mid_flight' };
+      }
+
+      // --- inject unsubscribe footer ---------------------------------------
+      const token = signUnsubscribeToken(recipientEmail, ownerEmail);
+      const finalHtml = appendUnsubscribeFooter(message.html, token);
 
       const transport = createTransport({
         host: smtp.host,
@@ -155,7 +189,7 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
           from: message.from,
           to: message.to,
           subject: message.subject,
-          html: message.html,
+          html: finalHtml,
         });
 
         const client = await pool.connect();
@@ -180,8 +214,18 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
         }
 
         await finalizeCampaignStatus(campaignId);
+        await logAudit({
+          ownerEmail,
+          action: 'email_sent',
+          payload: {
+            campaignId,
+            to: recipientEmail,
+            messageId: info.messageId ?? message.messageId,
+          },
+          ipAddress: null,
+        });
         logger.info(
-          { jobId: job.id, recipientId, to: message.to },
+          { jobId: job.id, recipientId, to: recipientEmail },
           'campaign email sent',
         );
         return { messageId: info.messageId };
@@ -193,6 +237,16 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
             WHERE id = $2`,
           [msg, recipientId],
         );
+        await logAudit({
+          ownerEmail,
+          action: 'email_failed',
+          payload: {
+            campaignId,
+            to: recipientEmail,
+            error: msg,
+          },
+          ipAddress: null,
+        });
         await finalizeCampaignStatus(campaignId);
         throw err;
       } finally {

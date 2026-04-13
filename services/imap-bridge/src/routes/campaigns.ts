@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 
+import { logAudit } from '../audit.js';
 import { requireInternalToken } from '../auth.js';
 import { pool } from '../db.js';
 import { campaignQueue } from '../queue.js';
@@ -36,41 +37,54 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
     }
     const { name, subject, html, recipients, smtp } = parsed.data;
 
-    // Case-insensitive dedupe; mail providers treat local part as
-    // case-insensitive in practice.
-    const unique = Array.from(
+    // 1. dedupe (case-insensitive)
+    const deduped = Array.from(
       new Set(recipients.map((r) => r.trim().toLowerCase())),
     ).filter((r) => r.length > 0);
 
-    if (unique.length === 0) {
+    if (deduped.length === 0) {
       return reply.code(400).send({ error: 'no valid recipients after dedupe' });
     }
 
+    // 2. filter out unsubscribed recipients (CASL)
+    const unsubRes = await pool.query<{ email: string }>(
+      'SELECT email FROM unsubscribes WHERE email = ANY($1)',
+      [deduped],
+    );
+    const unsubscribed = new Set(unsubRes.rows.map((r) => r.email));
+    const toSend = deduped.filter((r) => !unsubscribed.has(r));
+    const skippedUnsubscribed = deduped.length - toSend.length;
+
+    // 3. persist campaign row (always create, even when toSend is empty)
     const client = await pool.connect();
     let campaignId: string;
-    let recipientRows: { id: string; email: string }[];
+    let recipientRows: { id: string; email: string }[] = [];
+    const ownerEmail = smtp.user.toLowerCase();
 
     try {
       await client.query('BEGIN');
 
+      const initialStatus = toSend.length === 0 ? 'complete' : 'sending';
       const campaignRes = await client.query<{ id: string }>(
         `INSERT INTO campaigns (owner_email, name, subject, html_body, status)
-         VALUES ($1, $2, $3, $4, 'sending')
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [smtp.user, name, subject, html],
+        [ownerEmail, name, subject, html, initialStatus],
       );
       const firstRow = campaignRes.rows[0];
       if (!firstRow) throw new Error('campaigns insert returned no id');
       campaignId = firstRow.id;
 
-      const placeholders = unique.map((_, i) => `($1, $${i + 2})`).join(',');
-      const recipientsRes = await client.query<{ id: string; email: string }>(
-        `INSERT INTO campaign_recipients (campaign_id, email)
-         VALUES ${placeholders}
-         RETURNING id, email`,
-        [campaignId, ...unique],
-      );
-      recipientRows = recipientsRes.rows;
+      if (toSend.length > 0) {
+        const placeholders = toSend.map((_, i) => `($1, $${i + 2})`).join(',');
+        const recipientsRes = await client.query<{ id: string; email: string }>(
+          `INSERT INTO campaign_recipients (campaign_id, email)
+           VALUES ${placeholders}
+           RETURNING id, email`,
+          [campaignId, ...toSend],
+        );
+        recipientRows = recipientsRes.rows;
+      }
 
       await client.query('COMMIT');
     } catch (err) {
@@ -80,6 +94,7 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       client.release();
     }
 
+    // 4. enqueue one job per recipient
     for (const r of recipientRows) {
       const messageId = `${randomUUID()}@voxmail.voxtn.com`;
       await campaignQueue.add(
@@ -95,6 +110,7 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
             subject,
             html,
           },
+          ownerEmail,
         },
         {
           removeOnComplete: 1000,
@@ -105,7 +121,23 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       );
     }
 
-    return reply.code(201).send({ campaignId, queued: recipientRows.length });
+    // 5. audit log
+    await logAudit({
+      ownerEmail,
+      action: 'campaign_created',
+      payload: {
+        campaignId,
+        recipientCount: recipientRows.length,
+        skippedUnsubscribed,
+        dedupedFrom: recipients.length,
+      },
+      ipAddress: request.ip,
+    });
+
+    return reply.code(201).send({
+      campaignId,
+      queued: recipientRows.length,
+    });
   });
 
   app.get<{ Params: { id: string } }>(
@@ -118,7 +150,7 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
 
       const { rows } = await pool.query<{
         total: string;
-        sent: string;
+        sent: number;
         failed: string;
         open_count: number;
         click_count: number;
@@ -128,11 +160,11 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
             c.status,
             c.open_count,
             c.click_count,
+            c.sent_count                                       AS sent,
             (SELECT COUNT(*) FROM campaign_recipients
-                WHERE campaign_id = c.id)                           AS total,
-            c.sent_count                                            AS sent,
+                WHERE campaign_id = c.id)                      AS total,
             (SELECT COUNT(*) FROM campaign_recipients
-                WHERE campaign_id = c.id AND status = 'failed')     AS failed
+                WHERE campaign_id = c.id AND status = 'failed') AS failed
            FROM campaigns c
           WHERE c.id = $1`,
         [id],
