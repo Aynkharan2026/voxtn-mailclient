@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Integration test for POST /campaigns on voxmail-imap.
-# Uses bogus SMTP — exercises DB writes + queue enqueue. The rate-limited
-# worker will later fail each job (can't connect to bogus host); the DB row
-# status will flip from 'queued' to 'failed' within a few minutes. We only
-# verify the synchronous path here.
+# Integration test for POST /campaigns + GET /campaigns/:id/status on
+# voxmail-imap. Uses bogus SMTP — exercises DB writes + queue enqueue.
+# The rate-limited worker will later fail each job; we only verify the
+# synchronous path and initial DB state here.
 
 set -euo pipefail
 
@@ -35,25 +34,25 @@ check_status() {
 status=$(curl -sS -X POST "$BASE/campaigns" -o "$TMP" -w '%{http_code}')
 check_status "POST /campaigns without auth" 401 "$status"
 
-# 2. invalid payload (missing recipients)
+# 2. invalid payload (missing name)
 status=$(curl -sS -X POST "$BASE/campaigns" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d '{"subject":"x","html":"<p>y</p>","smtp":{"host":"x","port":1,"secure":false,"user":"x","pass":"y"}}' \
+    -d '{"subject":"x","html":"<p>y</p>","recipients":["a@b.test"],"smtp":{"host":"x","port":1,"secure":false,"user":"x","pass":"y"}}' \
     -o "$TMP" -w '%{http_code}')
-check_status "POST /campaigns missing recipients → 400" 400 "$status"
+check_status "POST /campaigns missing name → 400" 400 "$status"
 
-# 3. happy path with 2 distinct recipients + 1 case-variant duplicate of the
-#    first; we expect the server to dedupe to 2 queued emails.
+# 3. happy path — 3 inputs with a case-variant duplicate → 2 queued
 status=$(curl -sS -X POST "$BASE/campaigns" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
     -d '{
-        "subject":"VoxMail campaign integration test",
+        "name":"VoxMail integration-test campaign",
+        "subject":"Integration test",
         "html":"<p>this is a test</p>",
         "recipients":["alice+itest@example.test","ALICE+ITEST@EXAMPLE.TEST","bob+itest@example.test"],
         "smtp":{"host":"localhost","port":1,"secure":false,"user":"itest@example.test","pass":"y"}
     }' \
     -o "$TMP" -w '%{http_code}')
-check_status "POST /campaigns 3 input → 2 queued (case-insensitive dedupe) → 201" 201 "$status"
+check_status "POST /campaigns valid payload → 201" 201 "$status"
 
 CAMPAIGN_ID=$(sed -n 's/.*"campaignId":"\([^"]*\)".*/\1/p' "$TMP")
 QUEUED=$(sed -n 's/.*"queued":\([0-9]*\).*/\1/p' "$TMP")
@@ -61,33 +60,62 @@ echo "campaignId=$CAMPAIGN_ID queued=$QUEUED"
 
 echo "--- case-insensitive dedupe ---"
 if [ "$QUEUED" = "2" ]; then
-    echo "PASS (queued=2, alice and ALICE collapsed)"
-    pass=$((pass + 1))
+    echo "PASS (queued=2)"; pass=$((pass + 1))
 else
-    echo "FAIL (expected 2, got $QUEUED)"
-    fail=$((fail + 1))
+    echo "FAIL (expected 2, got $QUEUED)"; fail=$((fail + 1))
 fi
 echo
 
-# 5. verify DB rows via psql-on-server (counts only — no PII in output)
-echo "--- DB verification via ssh ---"
+# 4. DB row sanity
+echo "--- DB row counts (campaigns|recipients|name_stored) ---"
 COUNTS=$(ssh nexamail "sudo -u postgres psql -d nexamail -Atc \"
 SELECT
     (SELECT COUNT(*) FROM campaigns WHERE id = '$CAMPAIGN_ID'),
-    (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = '$CAMPAIGN_ID')
+    (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = '$CAMPAIGN_ID'),
+    (SELECT name = 'VoxMail integration-test campaign' FROM campaigns WHERE id = '$CAMPAIGN_ID')
 \" 2>/dev/null" 2>&1)
-echo "row counts (campaigns|recipients): $COUNTS"
-if echo "$COUNTS" | grep -q "^1|"; then
-    echo "PASS (campaign row exists)"
-    pass=$((pass + 1))
+echo "result: $COUNTS"
+if echo "$COUNTS" | grep -q "^1|2|t"; then
+    echo "PASS"; pass=$((pass + 1))
 else
-    echo "FAIL"
-    fail=$((fail + 1))
+    echo "FAIL"; fail=$((fail + 1))
 fi
-
-# 6. cleanup — drop the test campaign so the jobs stop retrying
-ssh nexamail "sudo -u postgres psql -d nexamail -c \"DELETE FROM campaigns WHERE id = '$CAMPAIGN_ID'\" >/dev/null 2>&1" || true
 echo
+
+# 5. GET /campaigns/:id/status
+status=$(curl -sS "$BASE/campaigns/$CAMPAIGN_ID/status" \
+    -H "Authorization: Bearer $TOKEN" \
+    -o "$TMP" -w '%{http_code}')
+check_status "GET /campaigns/{id}/status → 200" 200 "$status"
+echo "body: $(cat "$TMP")"
+
+# Assert the shape
+for field in total sent failed open_count click_count status; do
+    if ! grep -q "\"$field\"" "$TMP"; then
+        echo "FAIL: response missing \"$field\""
+        fail=$((fail + 1))
+    fi
+done
+TOTAL=$(sed -n 's/.*"total":\([0-9]*\).*/\1/p' "$TMP")
+if [ "$TOTAL" = "2" ]; then
+    echo "PASS (total=2 matches queued)"; pass=$((pass + 1))
+else
+    echo "FAIL (expected total=2, got $TOTAL)"; fail=$((fail + 1))
+fi
+echo
+
+# 6. unknown campaign id → 404
+status=$(curl -sS "$BASE/campaigns/00000000-0000-0000-0000-000000000000/status" \
+    -H "Authorization: Bearer $TOKEN" -o "$TMP" -w '%{http_code}')
+check_status "GET /campaigns/{unknown-uuid}/status → 404" 404 "$status"
+
+# 7. invalid uuid → 400
+status=$(curl -sS "$BASE/campaigns/not-a-uuid/status" \
+    -H "Authorization: Bearer $TOKEN" -o "$TMP" -w '%{http_code}')
+check_status "GET /campaigns/{bad-id}/status → 400" 400 "$status"
+
+# 8. Cleanup — drop test campaign so workers stop retrying
+ssh nexamail "sudo -u postgres psql -d nexamail -c \"DELETE FROM campaigns WHERE id = '$CAMPAIGN_ID'\" >/dev/null 2>&1" || true
 
 echo "==============="
 echo "passed: $pass"

@@ -7,6 +7,7 @@ import { pool } from '../db.js';
 import { campaignQueue } from '../queue.js';
 
 const campaignBodySchema = z.object({
+  name: z.string().min(1).max(200),
   subject: z.string().min(1).max(998),
   html: z.string().min(1),
   recipients: z.array(z.string().email()).min(1).max(10_000),
@@ -19,6 +20,9 @@ const campaignBodySchema = z.object({
   }),
 });
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const campaignRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireInternalToken);
 
@@ -30,12 +34,10 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
         details: parsed.error.format(),
       });
     }
-    const { subject, html, recipients, smtp } = parsed.data;
+    const { name, subject, html, recipients, smtp } = parsed.data;
 
-    // Dedupe recipients case-insensitively. Technically the local part of an
-    // email address is case-sensitive per RFC 5321, but in practice every
-    // mail provider treats it as case-insensitive, and deduping avoids
-    // sending the same person two copies when they paste a messy list.
+    // Case-insensitive dedupe; mail providers treat local part as
+    // case-insensitive in practice.
     const unique = Array.from(
       new Set(recipients.map((r) => r.trim().toLowerCase())),
     ).filter((r) => r.length > 0);
@@ -52,15 +54,13 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       await client.query('BEGIN');
 
       const campaignRes = await client.query<{ id: string }>(
-        `INSERT INTO campaigns (subject, html, smtp_host, smtp_user)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO campaigns (owner_email, name, subject, html_body, status)
+         VALUES ($1, $2, $3, $4, 'sending')
          RETURNING id`,
-        [subject, html, smtp.host, smtp.user],
+        [smtp.user, name, subject, html],
       );
       const firstRow = campaignRes.rows[0];
-      if (!firstRow) {
-        throw new Error('campaigns insert returned no id');
-      }
+      if (!firstRow) throw new Error('campaigns insert returned no id');
       campaignId = firstRow.id;
 
       const placeholders = unique.map((_, i) => `($1, $${i + 2})`).join(',');
@@ -80,7 +80,6 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       client.release();
     }
 
-    // Enqueue one job per recipient. Rate-limited worker drains at 10/min.
     for (const r of recipientRows) {
       const messageId = `${randomUUID()}@voxmail.voxtn.com`;
       await campaignQueue.add(
@@ -106,8 +105,50 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       );
     }
 
-    return reply
-      .code(201)
-      .send({ campaignId, queued: recipientRows.length });
+    return reply.code(201).send({ campaignId, queued: recipientRows.length });
   });
+
+  app.get<{ Params: { id: string } }>(
+    '/campaigns/:id/status',
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) {
+        return reply.code(400).send({ error: 'invalid campaign id' });
+      }
+
+      const { rows } = await pool.query<{
+        total: string;
+        sent: string;
+        failed: string;
+        open_count: number;
+        click_count: number;
+        status: string;
+      }>(
+        `SELECT
+            c.status,
+            c.open_count,
+            c.click_count,
+            (SELECT COUNT(*) FROM campaign_recipients
+                WHERE campaign_id = c.id)                           AS total,
+            c.sent_count                                            AS sent,
+            (SELECT COUNT(*) FROM campaign_recipients
+                WHERE campaign_id = c.id AND status = 'failed')     AS failed
+           FROM campaigns c
+          WHERE c.id = $1`,
+        [id],
+      );
+
+      const row = rows[0];
+      if (!row) return reply.code(404).send({ error: 'campaign not found' });
+
+      return {
+        total: Number(row.total),
+        sent: Number(row.sent),
+        failed: Number(row.failed),
+        open_count: Number(row.open_count),
+        click_count: Number(row.click_count),
+        status: row.status,
+      };
+    },
+  );
 };

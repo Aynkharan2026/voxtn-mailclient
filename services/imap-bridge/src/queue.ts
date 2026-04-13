@@ -87,7 +87,7 @@ export function startSendWorker(): Worker<SendJobData> {
 }
 
 // --------------------------------------------------------------------------
-// /campaigns queue (mass-send, rate-limited at 10/min, serial)
+// /campaigns queue (mass-send, rate-limited at 10/min, serial, idempotent)
 // --------------------------------------------------------------------------
 
 export const CAMPAIGN_QUEUE_NAME = 'voxmail.outbound.campaign';
@@ -106,16 +106,41 @@ export const campaignQueue = new Queue<CampaignJobData>(
   { connection },
 );
 
+async function finalizeCampaignStatus(campaignId: string): Promise<void> {
+  // Once no recipients remain in 'queued', transition 'sending' → terminal:
+  //   complete  if at least one was 'sent'
+  //   failed    otherwise
+  await pool.query(
+    `UPDATE campaigns c
+        SET status = CASE
+          WHEN (SELECT COUNT(*) FROM campaign_recipients
+                 WHERE campaign_id = c.id AND status = 'queued') > 0 THEN c.status
+          WHEN (SELECT COUNT(*) FROM campaign_recipients
+                 WHERE campaign_id = c.id AND status = 'sent') > 0 THEN 'complete'
+          ELSE 'failed'
+        END
+      WHERE c.id = $1 AND c.status = 'sending'`,
+    [campaignId],
+  );
+}
+
 export function startCampaignWorker(): Worker<CampaignJobData> {
   const worker = new Worker<CampaignJobData>(
     CAMPAIGN_QUEUE_NAME,
     async (job: Job<CampaignJobData>) => {
-      const { smtp, message, recipientId } = job.data;
+      const { smtp, message, recipientId, campaignId } = job.data;
 
-      await pool.query(
-        "UPDATE campaign_recipients SET status = 'sending' WHERE id = $1",
+      // Idempotency guard: if a previous attempt already sent this recipient
+      // (e.g. after a worker crash between SMTP ACK and DB update), skip
+      // rather than sending a duplicate.
+      const prior = await pool.query<{ status: string }>(
+        'SELECT status FROM campaign_recipients WHERE id = $1',
         [recipientId],
       );
+      if (prior.rows[0]?.status === 'sent') {
+        logger.info({ recipientId }, 'recipient already sent — skipping retry');
+        return { skipped: true };
+      }
 
       const transport = createTransport({
         host: smtp.host,
@@ -132,12 +157,29 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
           subject: message.subject,
           html: message.html,
         });
-        await pool.query(
-          `UPDATE campaign_recipients
-              SET status = 'sent', message_id = $1, sent_at = now(), error = NULL
-            WHERE id = $2`,
-          [info.messageId ?? message.messageId, recipientId],
-        );
+
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query(
+            `UPDATE campaign_recipients
+                SET status = 'sent', sent_at = now(), error_msg = NULL
+              WHERE id = $1 AND status <> 'sent'`,
+            [recipientId],
+          );
+          await client.query(
+            'UPDATE campaigns SET sent_count = sent_count + 1 WHERE id = $1',
+            [campaignId],
+          );
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK');
+          throw e;
+        } finally {
+          client.release();
+        }
+
+        await finalizeCampaignStatus(campaignId);
         logger.info(
           { jobId: job.id, recipientId, to: message.to },
           'campaign email sent',
@@ -146,9 +188,12 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         await pool.query(
-          "UPDATE campaign_recipients SET status = 'failed', error = $1 WHERE id = $2",
+          `UPDATE campaign_recipients
+              SET status = 'failed', error_msg = $1
+            WHERE id = $2`,
           [msg, recipientId],
         );
+        await finalizeCampaignStatus(campaignId);
         throw err;
       } finally {
         transport.close();
