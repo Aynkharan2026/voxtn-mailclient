@@ -5,6 +5,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     internal_service_token: str
+    tracking_worker_token: str
     voxtn_platform_api_url: str
     voxtn_platform_api_key: str
     database_url: str
@@ -15,6 +16,7 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             internal_service_token=os.environ.get("INTERNAL_SERVICE_TOKEN", ""),
+            tracking_worker_token=os.environ.get("TRACKING_WORKER_TOKEN", ""),
             voxtn_platform_api_url=os.environ.get(
                 "VOXTN_PLATFORM_API_URL", "http://host.docker.internal:8011"
             ),

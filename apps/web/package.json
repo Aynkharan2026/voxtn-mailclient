@@ -16,7 +16,8 @@
     "@tiptap/react": "^2.10.0",
     "@tiptap/starter-kit": "^2.10.0",
     "@tiptap/extension-link": "^2.10.0",
-    "@tiptap/extension-placeholder": "^2.10.0"
+    "@tiptap/extension-placeholder": "^2.10.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

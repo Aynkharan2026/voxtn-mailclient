@@ -1,0 +1,17 @@
+name = "voxmail-tracking"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Deploy to the tracking.voxtn.com hostname. The route binds the worker to
+# every path under that host. Requires DNS for tracking.voxtn.com (proxied,
+# orange cloud) in Cloudflare.
+routes = [
+  { pattern = "tracking.voxtn.com/*", zone_name = "voxtn.com" }
+]
+
+# Public vars (non-secret)
+[vars]
+VOXMAIL_AI_URL = "https://ai.nexamail.voxtn.com"
+
+# Secrets (set via: wrangler secret put TRACKING_WORKER_TOKEN)
+# - TRACKING_WORKER_TOKEN   shared bearer auth against voxmail-ai /track
