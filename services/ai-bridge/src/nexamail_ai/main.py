@@ -6,6 +6,7 @@ import socketio
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from .billing_routes import billing_router, webhook_router
 from .config import settings
 from .crm import router as crm_router
 from .db import close_pool, init_pool
@@ -33,6 +34,8 @@ fastapi_app.include_router(crm_router)
 fastapi_app.include_router(signatures_router)
 fastapi_app.include_router(voice_router)
 fastapi_app.include_router(tracking_router)
+fastapi_app.include_router(billing_router)
+fastapi_app.include_router(webhook_router)
 
 
 class HealthResponse(BaseModel):

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from .auth import require_internal_token
+from .billing import crm_gate
 
 
 class Contact(BaseModel):
@@ -80,7 +81,10 @@ _MOCK: dict[str, CRMContext] = {
 }
 
 
-router = APIRouter(prefix="/crm", dependencies=[Depends(require_internal_token)])
+router = APIRouter(
+    prefix="/crm",
+    dependencies=[Depends(require_internal_token), Depends(crm_gate)],
+)
 
 
 @router.get("/context", response_model=CRMContext)

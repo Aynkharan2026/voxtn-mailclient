@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from .auth import require_internal_token
+from .billing import voice_gate
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -180,7 +181,9 @@ async def gemini_generate_email(transcript: str) -> VoiceToEmailResponse:
 
 
 # --- Router ------------------------------------------------------------------
-router = APIRouter(dependencies=[Depends(require_internal_token)])
+router = APIRouter(
+    dependencies=[Depends(require_internal_token), Depends(voice_gate)],
+)
 
 MAX_AUDIO_BYTES = 20 * 1024 * 1024  # 20 MB
 MIN_AUDIO_BYTES = 1_000             # ~tenths of a second — smaller means bug

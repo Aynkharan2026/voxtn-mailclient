@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { logAudit } from '../audit.js';
 import { requireInternalToken } from '../auth.js';
+import { enforceFeature } from '../billing-gate.js';
 import { pool } from '../db.js';
 import { campaignQueue } from '../queue.js';
 
@@ -28,6 +29,11 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireInternalToken);
 
   app.post('/campaigns', async (request, reply) => {
+    // Feature gate: 'pro' tier required if caller identifies via
+    // X-Voxmail-User. Legacy / internal callers (no header) pass through.
+    const allowed = await enforceFeature('campaigns', request, reply);
+    if (!allowed) return;
+
     const parsed = campaignBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
