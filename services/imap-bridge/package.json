@@ -15,7 +15,7 @@
   "dependencies": {
     "fastify": "^5.1.0",
     "imapflow": "^1.0.182",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^8.0.5",
     "pino": "^9.5.0"
   },
   "devDependencies": {

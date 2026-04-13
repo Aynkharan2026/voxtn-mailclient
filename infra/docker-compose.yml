@@ -15,7 +15,7 @@ services:
   imap-bridge:
     build:
       context: ../services/imap-bridge
-    image: nexamail/imap-bridge:dev
+    image: nexamail/imap-bridge:0.1.0
     container_name: nexamail-imap
     restart: unless-stopped
     env_file:
@@ -38,7 +38,7 @@ services:
   ai-bridge:
     build:
       context: ../services/ai-bridge
-    image: nexamail/ai-bridge:dev
+    image: nexamail/ai-bridge:0.1.0
     container_name: nexamail-ai
     restart: unless-stopped
     env_file:
