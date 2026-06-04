@@ -16,6 +16,8 @@ class Settings:
     stripe_price_starter: str
     stripe_price_pro: str
     app_base_url: str
+    gateway_url: str
+    gateway_token: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -36,6 +38,10 @@ class Settings:
             app_base_url=(
                 os.environ.get("APP_BASE_URL", "http://localhost:3000").rstrip("/")
             ),
+            gateway_url=os.environ.get(
+                "GATEWAY_URL", "http://host.docker.internal:8765/v1"
+            ),
+            gateway_token=os.environ.get("GATEWAY_TOKEN", ""),
         )
 
 
