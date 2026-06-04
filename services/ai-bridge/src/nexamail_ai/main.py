@@ -14,6 +14,7 @@ from .realtime import sio
 from .signatures import router as signatures_router
 from .tenants import router as tenants_router
 from .tracking import router as tracking_router
+from .triage import triage_router
 from .voice import router as voice_router
 
 
@@ -38,6 +39,7 @@ fastapi_app.include_router(tracking_router)
 fastapi_app.include_router(billing_router)
 fastapi_app.include_router(webhook_router)
 fastapi_app.include_router(tenants_router)
+fastapi_app.include_router(triage_router)
 
 
 class HealthResponse(BaseModel):
