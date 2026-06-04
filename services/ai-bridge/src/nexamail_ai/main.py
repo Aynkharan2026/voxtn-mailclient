@@ -10,6 +10,7 @@ from .billing_routes import billing_router, webhook_router
 from .config import settings
 from .crm import router as crm_router
 from .db import close_pool, init_pool
+from .draft import draft_router
 from .realtime import sio
 from .signatures import router as signatures_router
 from .tenants import router as tenants_router
@@ -40,6 +41,7 @@ fastapi_app.include_router(billing_router)
 fastapi_app.include_router(webhook_router)
 fastapi_app.include_router(tenants_router)
 fastapi_app.include_router(triage_router)
+fastapi_app.include_router(draft_router)
 
 
 class HealthResponse(BaseModel):
