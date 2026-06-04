@@ -2,16 +2,32 @@ name: voxmail
 
 # VoxMail service stack.
 #
-# Runs on the shared Hetzner host (ssh alias: nexamail). Host Postgres
-# and Redis are reached via host.docker.internal — on Linux this must
-# be explicitly mapped with extra_hosts host-gateway (see prior design
-# decision: use host.docker.internal uniformly between local and host).
+# Runs on the shared Hetzner host (ssh alias: nexamail).
+# - Redis: VoxMail has its OWN redis container (voxmail-redis) on the voxmail_default
+#   network, reached by service name (REDIS_URL=redis://voxmail-redis:6379/0). NOT the
+#   shared host redis (which has 6+ other consumers and no auth).
+# - Postgres: STAYS on the host (data lives there) via host.docker.internal. Because the
+#   bridges run on voxmail_default but host PG listens on docker0 (172.17.0.1), the imap/ai
+#   containers are ALSO attached to the docker0 "bridge" network. Compose can't attach to the
+#   default bridge (alias limitation), so that join is imperative + held by a systemd unit
+#   (voxmail-docker0-join.service). >>> AFTER ANY `docker compose up -d` RECREATE, RUN:
+#   `systemctl start voxmail-docker0-join.service` to re-attach docker0 for host-Postgres. <<<
 #
-# Ports are bound to 127.0.0.1 only. Public access goes through the
-# host nginx (already running) which will proxy / terminate TLS when
-# we wire it up in a later phase.
+# Ports are bound to 127.0.0.1 only. Public access goes through the host nginx.
 
 services:
+  voxmail-redis:
+    image: redis:7-alpine
+    container_name: voxmail-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    # internal-only: no host port published; reachable by the bridges via voxmail_default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   imap-bridge:
     build:
       context: ../services/imap-bridge
