@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { startCampaignWorker, startSendWorker } from './queue.js';
 import { auditRoutes } from './routes/audit.js';
 import { campaignRoutes } from './routes/campaigns.js';
+import { optoutRoutes } from './routes/optout.js';
 import { sendRoutes } from './routes/send.js';
 import { sharedInboxRoutes } from './routes/shared-inboxes.js';
 import { timelineRoutes } from './routes/timeline.js';
@@ -40,6 +41,7 @@ await app.register(sharedInboxRoutes);
 await app.register(timelineRoutes);
 await app.register(unsubscribeRoutes);
 await app.register(auditRoutes);
+await app.register(optoutRoutes);
 
 startSendWorker();
 startCampaignWorker();
