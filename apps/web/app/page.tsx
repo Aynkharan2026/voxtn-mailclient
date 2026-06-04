@@ -5,12 +5,20 @@ export default function Home() {
     <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-6">
       <h1 className="text-4xl font-semibold text-brand-navy">VoxMail</h1>
       <p className="text-gray-600">AI-powered white-label mail client.</p>
-      <Link
-        href="/compose"
-        className="px-5 py-2 rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition"
-      >
-        Compose
-      </Link>
+      <div className="flex gap-4">
+        <Link
+          href="/inbox"
+          className="px-5 py-2 rounded bg-brand-navy text-white font-medium hover:opacity-90 transition"
+        >
+          Inbox
+        </Link>
+        <Link
+          href="/compose"
+          className="px-5 py-2 rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition"
+        >
+          Compose
+        </Link>
+      </div>
     </main>
   );
 }
