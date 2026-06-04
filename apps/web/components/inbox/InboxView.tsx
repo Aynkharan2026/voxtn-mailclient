@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import type { InboxMessage, GetMessageResult } from "@/app/inbox/actions";
 
 type Folder = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";
@@ -14,9 +14,12 @@ const FOLDERS: { key: Folder; label: string }[] = [
   { key: "archive", label: "Archive" },
 ];
 
-function formatRelativeDate(dateStr: string): string {
+function formatRelativeDate(dateStr: string, mounted: boolean): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
+  // Deterministic across server/client: fixed locale + UTC. This is what SSR and the first client render emit.
+  const absolute = date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  if (!mounted) return absolute;            // <-- before mount, server and client agree -> no #418
   const now = Date.now();
   const diffMs = now - date.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
@@ -26,7 +29,7 @@ function formatRelativeDate(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDays = Math.floor(diffHr / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return absolute;
 }
 
 function sanitizeHtml(html: string): string {
@@ -53,6 +56,9 @@ export function InboxView({
   initialMessages: InboxMessage[];
   getMessageAction: (id: string) => Promise<GetMessageResult>;
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
   const [search, setSearch] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(
@@ -159,7 +165,7 @@ export function InboxView({
                         {msg.from.name || msg.from.email}
                       </span>
                       <span className="ml-auto text-xs text-gray-400 flex-shrink-0">
-                        {formatRelativeDate(msg.date)}
+                        {formatRelativeDate(msg.date, mounted)}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 truncate mt-0.5 pl-4">
@@ -195,6 +201,7 @@ export function InboxView({
               <span className="ml-auto text-xs">
                 {formatRelativeDate(
                   displayMessage?.date ?? selectedMessage.date,
+                  mounted,
                 )}
               </span>
             </div>
