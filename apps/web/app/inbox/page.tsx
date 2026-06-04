@@ -1,4 +1,5 @@
 import { listInboxAction, getMessageAction } from "./actions";
+import { triageMessagesAction } from "./triage-actions";
 import { InboxView } from "@/components/inbox/InboxView";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,19 @@ export default async function InboxPage() {
     );
   }
 
+  let triageMap: Record<string, { priority: "red" | "gold" | "normal"; sentiment: string; stop_request: boolean }> = {};
+  try {
+    triageMap = await triageMessagesAction(result.messages);
+  } catch {
+    // triage failure must not break inbox render
+  }
+
   return (
     <main className="min-h-screen flex flex-col">
       <InboxView
         initialMessages={result.messages}
         getMessageAction={getMessageAction}
+        triage={triageMap}
       />
     </main>
   );
