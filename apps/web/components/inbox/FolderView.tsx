@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useTransition, useMemo } from "react";
 import Link from "next/link";
-import type { InboxMessage, GetMessageResult } from "@/app/inbox/actions";
+import type { InboxMessage } from "@/app/inbox/actions";
+import type { GetFolderMessageResult } from "@/app/folders/actions";
 
-type Folder = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";
+type FolderKey = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";
 
-const FOLDERS: { key: Folder; label: string }[] = [
-  { key: "inbox", label: "Inbox" },
-  { key: "sent", label: "Sent" },
-  { key: "drafts", label: "Drafts" },
-  { key: "spam", label: "Spam" },
-  { key: "trash", label: "Trash" },
-  { key: "archive", label: "Archive" },
+const FOLDERS: { key: FolderKey; label: string; href: string }[] = [
+  { key: "inbox", label: "Inbox", href: "/inbox" },
+  { key: "sent", label: "Sent", href: "/sent" },
+  { key: "drafts", label: "Drafts", href: "/drafts" },
+  { key: "spam", label: "Spam", href: "/spam" },
+  { key: "trash", label: "Trash", href: "/trash" },
+  { key: "archive", label: "Archive", href: "/archive" },
 ];
 
 function formatRelativeDate(dateStr: string, mounted: boolean): string {
@@ -50,21 +51,22 @@ function getBodyText(
   return { text: body.text, html: body.html };
 }
 
-export function InboxView({
+export function FolderView({
+  folder,
+  label,
   initialMessages,
-  getMessageAction,
+  getFolderMessageAction,
 }: {
+  folder: string;
+  label: string;
   initialMessages: InboxMessage[];
-  getMessageAction: (id: string) => Promise<GetMessageResult>;
+  getFolderMessageAction: (messageId: string, uiFolder: string) => Promise<GetFolderMessageResult>;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
   const [search, setSearch] = useState("");
-  const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(
-    null,
-  );
+  const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(null);
   const [loadedBody, setLoadedBody] = useState<InboxMessage | null>(null);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -85,7 +87,7 @@ export function InboxView({
     setLoadedBody(null);
     setBodyError(null);
     startTransition(async () => {
-      const result = await getMessageAction(msg.message_id);
+      const result = await getFolderMessageAction(msg.message_id, folder);
       if (result.ok) {
         setLoadedBody(result.message);
       } else {
@@ -103,36 +105,20 @@ export function InboxView({
         <div className="px-4 pb-4 text-lg font-semibold text-brand-amber tracking-tight">
           VoxMail
         </div>
-        {FOLDERS.map(({ key, label }) => {
-          const isActive = activeFolder === key;
-          if (key === "inbox") {
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveFolder(key)}
-                className={[
-                  "flex items-center gap-2 px-4 py-2 text-sm rounded-md mx-2 text-left transition",
-                  isActive
-                    ? "bg-brand-amber text-brand-navy font-semibold"
-                    : "text-white/80 hover:bg-white/10",
-                ].join(" ")}
-              >
-                {label}
-                {initialMessages.length > 0 && (
-                  <span className="ml-auto bg-brand-amber text-brand-navy text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                    {initialMessages.length}
-                  </span>
-                )}
-              </button>
-            );
-          }
+        {FOLDERS.map(({ key, label: folderLabel, href }) => {
+          const isActive = folder === key;
           return (
             <Link
               key={key}
-              href={"/" + key}
-              className="flex items-center gap-2 px-4 py-2 text-sm rounded-md mx-2 text-left transition text-white/80 hover:bg-white/10"
+              href={href}
+              className={[
+                "flex items-center gap-2 px-4 py-2 text-sm rounded-md mx-2 text-left transition",
+                isActive
+                  ? "bg-brand-amber text-brand-navy font-semibold"
+                  : "text-white/80 hover:bg-white/10",
+              ].join(" ")}
             >
-              {label}
+              {folderLabel}
             </Link>
           );
         })}
@@ -143,7 +129,7 @@ export function InboxView({
         <div className="p-3 border-b border-gray-100">
           <input
             type="search"
-            placeholder="Search inbox…"
+            placeholder={`Search ${label.toLowerCase()}…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-amber"
@@ -152,7 +138,7 @@ export function InboxView({
         <ul className="flex-1 overflow-y-auto divide-y divide-gray-100">
           {filteredMessages.length === 0 ? (
             <li className="p-4 text-sm text-gray-400 text-center">
-              No messages
+              No messages in {label} yet.
             </li>
           ) : (
             filteredMessages.map((msg) => {
@@ -167,7 +153,6 @@ export function InboxView({
                     ].join(" ")}
                   >
                     <div className="flex items-center gap-2">
-                      {/* Unread dot — all list_unread results are unread */}
                       <span className="w-2 h-2 rounded-full bg-brand-amber flex-shrink-0" />
                       <span className="text-sm font-semibold text-brand-navy truncate">
                         {msg.from.name || msg.from.email}
