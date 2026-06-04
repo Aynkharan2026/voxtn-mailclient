@@ -1,5 +1,5 @@
 -- 006 — contacts + messages (B1 unified contact timeline).
--- Applied pending orchestrator review on nexamail.
+-- Applied 2026-06-04 on nexamail (additive; smoked: 2-emails-one-timeline + idempotent upsert).
 --
 -- Unified contact timeline: messages grouped by contact across channels.
 -- Email is the first channel; SMS/WhatsApp/voice slot in via channel column.
