@@ -182,17 +182,22 @@ export function InboxView({
                     <div className="text-sm text-gray-700 truncate mt-0.5 pl-4">
                       {msg.subject}
                     </div>
-                    {triage[msg.message_id] && triage[msg.message_id].priority !== "normal" && (
+                    {triage[msg.message_id] && (
                       <div className="mt-1 pl-4">
                         {triage[msg.message_id].priority === "red" ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                             Needs attention
                           </span>
-                        ) : (
+                        ) : triage[msg.message_id].priority === "gold" ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                             High intent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                            Neutral
                           </span>
                         )}
                       </div>
