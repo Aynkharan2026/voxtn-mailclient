@@ -6,6 +6,7 @@ import pino from 'pino';
 import { logAudit } from './audit.js';
 import { config } from './config.js';
 import { pool } from './db.js';
+import { isOptedOut } from './optout.js';
 import {
   appendUnsubscribeFooter,
   signUnsubscribeToken,
@@ -157,11 +158,7 @@ export function startCampaignWorker(): Worker<CampaignJobData> {
       }
 
       // --- defense in depth: recheck unsubscribe list ----------------------
-      const unsub = await pool.query<{ email: string }>(
-        'SELECT email FROM unsubscribes WHERE email = $1',
-        [recipientEmail],
-      );
-      if (unsub.rows.length > 0) {
+      if (await isOptedOut(recipientEmail)) {
         await pool.query(
           `UPDATE campaign_recipients
               SET status = 'failed', error_msg = $1
