@@ -5,7 +5,7 @@ import {
   startCheckoutAction,
   type Plan,
   type PlanTier,
-} from "@/app/settings/billing/actions";
+} from "@/app/(shell)/settings/billing/actions";
 
 const PLAN_CATALOG: ReadonlyArray<{
   tier: PlanTier;

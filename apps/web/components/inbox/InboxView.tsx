@@ -9,18 +9,7 @@ import type {
   ArchiveResult,
   DeleteResult,
   MarkReadResult,
-} from "@/app/inbox/actions";
-
-type Folder = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";
-
-const FOLDERS: { key: Folder; label: string }[] = [
-  { key: "inbox", label: "Inbox" },
-  { key: "sent", label: "Sent" },
-  { key: "drafts", label: "Drafts" },
-  { key: "spam", label: "Spam" },
-  { key: "trash", label: "Trash" },
-  { key: "archive", label: "Archive" },
-];
+} from "@/app/(shell)/inbox/actions";
 
 function formatRelativeDate(dateStr: string, mounted: boolean): string {
   const date = new Date(dateStr);
@@ -73,6 +62,7 @@ export function InboxView({
   deleteAction,
   markReadAction,
   triage = {},
+  activeAccount,
 }: {
   initialMessages: InboxMessage[];
   getMessageAction: (id: string) => Promise<GetMessageResult>;
@@ -81,12 +71,12 @@ export function InboxView({
   deleteAction: (id: string) => Promise<DeleteResult>;
   markReadAction: (id: string) => Promise<MarkReadResult>;
   triage?: Record<string, TriageState>;
+  activeAccount?: string;
 }) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  const [activeFolder, setActiveFolder] = useState<Folder>("inbox");
   const [search, setSearch] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(
     null,
@@ -232,42 +222,15 @@ export function InboxView({
   }, [selectedMessage, markReadAction, showToast]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Folder rail */}
-      <aside className="w-48 flex-shrink-0 bg-brand-navy text-white flex flex-col pt-6 pb-4 gap-1">
-        <div className="px-4 pb-4 text-lg font-semibold text-brand-amber tracking-tight">
-          VoxMail
-        </div>
-        {FOLDERS.map(({ key, label }) => {
-          const isActive = activeFolder === key;
-          const isDisabled = key !== "inbox";
-          return (
-            <button
-              key={key}
-              disabled={isDisabled}
-              onClick={() => !isDisabled && setActiveFolder(key)}
-              className={[
-                "flex items-center gap-2 px-4 py-2 text-sm rounded-md mx-2 text-left transition",
-                isActive
-                  ? "bg-brand-amber text-brand-navy font-semibold"
-                  : isDisabled
-                    ? "text-white/40 cursor-not-allowed"
-                    : "text-white/80 hover:bg-white/10",
-              ].join(" ")}
-            >
-              {label}
-              {key === "inbox" && initialMessages.length > 0 && (
-                <span className="ml-auto bg-brand-amber text-brand-navy text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                  {initialMessages.length}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </aside>
-
+    <div className="flex h-full overflow-hidden bg-gray-50 min-w-0">
       {/* Message list */}
       <div className="w-80 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
+        {/* Account label */}
+        {activeAccount && (
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-400 truncate">
+            {activeAccount}
+          </div>
+        )}
         <div className="p-3 border-b border-gray-100">
           <input
             type="search"
@@ -346,6 +309,12 @@ export function InboxView({
           </div>
         ) : (
           <article className="max-w-3xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            {/* D3: show active account in reading-pane header */}
+            {activeAccount && (
+              <div className="text-xs text-gray-400 mb-3">
+                Account: <span className="font-medium">{activeAccount}</span>
+              </div>
+            )}
             <h2 className="text-xl font-semibold text-brand-navy mb-2">
               {displayMessage?.subject ?? selectedMessage.subject}
             </h2>

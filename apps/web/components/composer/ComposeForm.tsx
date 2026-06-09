@@ -7,7 +7,7 @@ import {
   cancelSendAction,
   sendEmailAction,
   voiceToEmailAction,
-} from "@/app/compose/actions";
+} from "@/app/(shell)/compose/actions";
 
 type Status =
   | { state: "idle" }

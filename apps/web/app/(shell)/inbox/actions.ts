@@ -136,14 +136,17 @@ async function mcpPost<T>(
   return res.json() as Promise<T>;
 }
 
-export async function listInboxAction(): Promise<ListInboxResult> {
+// D3: listInboxAction accepts optional account (email) — threaded from URL/cookie
+export async function listInboxAction(account?: string): Promise<ListInboxResult> {
   const cfg = getMcpConfig();
   if (!cfg.ok) return { ok: false, error: cfg.error };
 
   try {
+    const reqBody: Record<string, unknown> = { limit: 50 };
+    if (account) reqBody.account = account;
     const data = await mcpPost<{ messages: InboxMessage[] }>(
       "voxmail_list_unread/call",
-      { limit: 50 },
+      reqBody,
       "voxmail.read",
     );
     return { ok: true, messages: data.messages ?? [] };
@@ -155,16 +158,20 @@ export async function listInboxAction(): Promise<ListInboxResult> {
   }
 }
 
+// D3: getMessageAction accepts optional account
 export async function getMessageAction(
   messageId: string,
+  account?: string,
 ): Promise<GetMessageResult> {
   const cfg = getMcpConfig();
   if (!cfg.ok) return { ok: false, error: cfg.error };
 
   try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
     const data = await mcpPost<{ message: InboxMessage }>(
       "voxmail_get_message/call",
-      { message_id: messageId },
+      reqBody,
       "voxmail.read",
     );
     return { ok: true, message: data.message };
@@ -176,11 +183,14 @@ export async function getMessageAction(
   }
 }
 
-// D2: Reply draft — read scope (prefetch thread context)
+// D2: Reply draft — read scope (prefetch thread context); D3: accept account
 export async function replyDraftAction(
   messageId: string,
+  account?: string,
 ): Promise<ReplyDraftResult> {
   try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
     const data = await mcpPost<{
       to: string;
       cc?: string;
@@ -189,7 +199,7 @@ export async function replyDraftAction(
       references?: string;
       quoted_body: string;
       draft_body: string;
-    }>("voxmail_reply/call", { message_id: messageId }, "voxmail.read");
+    }>("voxmail_reply/call", reqBody, "voxmail.read");
     return { ok: true, ...data };
   } catch (err) {
     return {
@@ -199,15 +209,18 @@ export async function replyDraftAction(
   }
 }
 
-// D2: Move — write scope
+// D2: Move — write scope; D3: accept account
 export async function moveAction(
   messageId: string,
   destFolder: string,
+  account?: string,
 ): Promise<MoveResult> {
   try {
+    const reqBody: Record<string, unknown> = { message_id: messageId, dest_folder: destFolder };
+    if (account) reqBody.account = account;
     const data = await mcpPost<{ moved: true }>(
       "voxmail_move/call",
-      { message_id: messageId, dest_folder: destFolder },
+      reqBody,
       "voxmail.write",
     );
     return { ok: true, moved: data.moved };
@@ -219,17 +232,19 @@ export async function moveAction(
   }
 }
 
-// D2: Archive = move to Archive
-export async function archiveAction(messageId: string): Promise<ArchiveResult> {
-  return moveAction(messageId, "Archive");
+// D2: Archive = move to Archive; D3: accept account
+export async function archiveAction(messageId: string, account?: string): Promise<ArchiveResult> {
+  return moveAction(messageId, "Archive", account);
 }
 
-// D2: Delete = move to Trash (recoverable)
-export async function deleteAction(messageId: string): Promise<DeleteResult> {
+// D2: Delete = move to Trash (recoverable); D3: accept account
+export async function deleteAction(messageId: string, account?: string): Promise<DeleteResult> {
   try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
     const data = await mcpPost<{ deleted_to_trash: true; trash_folder: string }>(
       "voxmail_delete/call",
-      { message_id: messageId },
+      reqBody,
       "voxmail.write",
     );
     return { ok: true, deleted_to_trash: data.deleted_to_trash, trash_folder: data.trash_folder };
@@ -241,12 +256,14 @@ export async function deleteAction(messageId: string): Promise<DeleteResult> {
   }
 }
 
-// D2: Mark read — write scope
-export async function markReadAction(messageId: string): Promise<MarkReadResult> {
+// D2: Mark read — write scope; D3: accept account
+export async function markReadAction(messageId: string, account?: string): Promise<MarkReadResult> {
   try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
     await mcpPost<unknown>(
       "voxmail_mark_read/call",
-      { message_id: messageId },
+      reqBody,
       "voxmail.write",
     );
     return { ok: true };

@@ -7,7 +7,7 @@ import {
   createSharedInboxAction,
   listSharedInboxesAction,
   type SharedInbox,
-} from "@/app/settings/shared-inboxes/actions";
+} from "@/app/(shell)/settings/shared-inboxes/actions";
 
 export function SharedInboxManager({ initial }: { initial: SharedInbox[] }) {
   const [inboxes, setInboxes] = useState<SharedInbox[]>(initial);
