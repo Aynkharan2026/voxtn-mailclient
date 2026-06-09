@@ -13,7 +13,7 @@ import httpx
 from .config import settings
 
 # Gateway timeout (seconds)
-_GATEWAY_TIMEOUT = 20.0
+_GATEWAY_TIMEOUT = 45.0
 
 # Zero-retention / no-train headers — sent on every gateway request.
 _NO_RETAIN_HEADERS: dict[str, str] = {

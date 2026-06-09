@@ -26,7 +26,8 @@ from pydantic import BaseModel
 from .auth import require_internal_token
 from .billing import voice_gate
 from .config import settings
-from .triage import _gateway_chat, detect_tamil
+from .gateway import _gateway_chat
+from .triage import detect_tamil
 from .utils import frame_untrusted
 
 logger = logging.getLogger(__name__)
