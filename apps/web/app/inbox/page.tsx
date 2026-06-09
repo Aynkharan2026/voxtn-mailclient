@@ -1,4 +1,11 @@
-import { listInboxAction, getMessageAction } from "./actions";
+import {
+  listInboxAction,
+  getMessageAction,
+  replyDraftAction,
+  archiveAction,
+  deleteAction,
+  markReadAction,
+} from "./actions";
 import { triageMessagesAction } from "./triage-actions";
 import { InboxView } from "@/components/inbox/InboxView";
 
@@ -30,6 +37,10 @@ export default async function InboxPage() {
       <InboxView
         initialMessages={result.messages}
         getMessageAction={getMessageAction}
+        replyDraftAction={replyDraftAction}
+        archiveAction={archiveAction}
+        deleteAction={deleteAction}
+        markReadAction={markReadAction}
         triage={triageMap}
       />
     </main>

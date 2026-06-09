@@ -1,7 +1,15 @@
 "use client";
 
-import { useState, useEffect, useTransition, useMemo } from "react";
-import type { InboxMessage, GetMessageResult } from "@/app/inbox/actions";
+import { useState, useEffect, useTransition, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import type {
+  InboxMessage,
+  GetMessageResult,
+  ReplyDraftResult,
+  ArchiveResult,
+  DeleteResult,
+  MarkReadResult,
+} from "@/app/inbox/actions";
 
 type Folder = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";
 
@@ -55,15 +63,26 @@ type TriageState = {
   stop_request: boolean;
 };
 
+type ToastMsg = { text: string; variant: "success" | "error" };
+
 export function InboxView({
   initialMessages,
   getMessageAction,
+  replyDraftAction,
+  archiveAction,
+  deleteAction,
+  markReadAction,
   triage = {},
 }: {
   initialMessages: InboxMessage[];
   getMessageAction: (id: string) => Promise<GetMessageResult>;
+  replyDraftAction: (id: string) => Promise<ReplyDraftResult>;
+  archiveAction: (id: string) => Promise<ArchiveResult>;
+  deleteAction: (id: string) => Promise<DeleteResult>;
+  markReadAction: (id: string) => Promise<MarkReadResult>;
   triage?: Record<string, TriageState>;
 }) {
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -76,16 +95,34 @@ export function InboxView({
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Optimistic removal state
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  // Read state tracking (optimistic)
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  // Action busy state
+  const [actionPending, setActionPending] = useState(false);
+  // Toast
+  const [toast, setToast] = useState<ToastMsg | null>(null);
+  // Trash confirm dialog
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const showToast = useCallback((text: string, variant: "success" | "error") => {
+    setToast({ text, variant });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   const filteredMessages = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return initialMessages;
-    return initialMessages.filter(
-      (m) =>
+    return initialMessages.filter((m) => {
+      if (removedIds.has(m.message_id)) return false;
+      if (!q) return true;
+      return (
         m.from.name.toLowerCase().includes(q) ||
         m.from.email.toLowerCase().includes(q) ||
-        m.subject.toLowerCase().includes(q),
-    );
-  }, [initialMessages, search]);
+        m.subject.toLowerCase().includes(q)
+      );
+    });
+  }, [initialMessages, search, removedIds]);
 
   function handleSelectMessage(msg: InboxMessage) {
     setSelectedMessage(msg);
@@ -102,6 +139,97 @@ export function InboxView({
   }
 
   const displayMessage = loadedBody ?? selectedMessage;
+
+  // D3 action handlers
+  const handleReply = useCallback(async () => {
+    if (!selectedMessage) return;
+    setActionPending(true);
+    try {
+      const draft = await replyDraftAction(selectedMessage.message_id);
+      let params: Record<string, string>;
+      if (draft.ok) {
+        params = {
+          to: draft.to,
+          subject: draft.subject,
+          body: draft.draft_body,
+          in_reply_to: draft.in_reply_to,
+        };
+        if (draft.cc) params.cc = draft.cc;
+        if (draft.references) params.references = draft.references;
+      } else {
+        // Graceful fallback from loaded message data
+        const fromEmail = displayMessage?.from.email ?? selectedMessage.from.email;
+        const subject = displayMessage?.subject ?? selectedMessage.subject;
+        const fallbackSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+        params = {
+          to: fromEmail,
+          subject: fallbackSubject,
+          body: "",
+          in_reply_to: selectedMessage.message_id,
+        };
+      }
+      const qs = new URLSearchParams(params).toString();
+      router.push(`/compose?${qs}`);
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, displayMessage, replyDraftAction, router]);
+
+  const handleArchive = useCallback(async () => {
+    if (!selectedMessage) return;
+    setActionPending(true);
+    const id = selectedMessage.message_id;
+    try {
+      const res = await archiveAction(id);
+      if (res.ok) {
+        setRemovedIds((prev) => new Set(prev).add(id));
+        setSelectedMessage(null);
+        setLoadedBody(null);
+        showToast("Archived", "success");
+      } else {
+        showToast(`Archive failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, archiveAction, showToast]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!confirmDeleteId) return;
+    setConfirmDeleteId(null);
+    setActionPending(true);
+    const id = confirmDeleteId;
+    try {
+      const res = await deleteAction(id);
+      if (res.ok) {
+        setRemovedIds((prev) => new Set(prev).add(id));
+        setSelectedMessage(null);
+        setLoadedBody(null);
+        showToast("Moved to Trash", "success");
+      } else {
+        showToast(`Move to Trash failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [confirmDeleteId, deleteAction, showToast]);
+
+  const handleMarkRead = useCallback(async () => {
+    if (!selectedMessage) return;
+    setActionPending(true);
+    const id = selectedMessage.message_id;
+    try {
+      const res = await markReadAction(id);
+      if (res.ok) {
+        setReadIds((prev) => new Set(prev).add(id));
+        showToast("Marked as read", "success");
+      } else {
+        showToast(`Mark read failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, markReadAction, showToast]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -235,6 +363,51 @@ export function InboxView({
             </div>
             <hr className="mb-4 border-gray-100" />
 
+            {/* D3: Action button row */}
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <button
+                data-testid="reply-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleReply}
+                className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
+              >
+                Reply
+              </button>
+              <button
+                data-testid="archive-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleArchive}
+                className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
+              >
+                Archive
+              </button>
+              <button
+                data-testid="delete-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={() => selectedMessage && setConfirmDeleteId(selectedMessage.message_id)}
+                className="px-3 py-1.5 text-sm rounded border border-brand-navy text-brand-navy font-medium hover:bg-brand-navy hover:text-white transition disabled:opacity-40"
+              >
+                Trash
+              </button>
+              <button
+                data-testid="markread-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleMarkRead}
+                className={[
+                  "px-3 py-1.5 text-sm rounded border font-medium transition disabled:opacity-40",
+                  selectedMessage && readIds.has(selectedMessage.message_id)
+                    ? "border-brand-amber text-brand-amber hover:bg-amber-50"
+                    : "border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white",
+                ].join(" ")}
+              >
+                {selectedMessage && readIds.has(selectedMessage.message_id) ? "Mark unread" : "Mark read"}
+              </button>
+            </div>
+
             {isPending && (
               <p className="text-sm text-gray-400 animate-pulse">
                 Loading message…
@@ -273,6 +446,52 @@ export function InboxView({
           </article>
         )}
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={[
+            "fixed bottom-6 left-1/2 -translate-x-1/2 rounded shadow-lg px-4 py-3 text-sm z-50 text-white",
+            toast.variant === "error" ? "bg-red-700" : "bg-brand-navy",
+          ].join(" ")}
+        >
+          {toast.text}
+        </div>
+      )}
+
+      {/* Trash confirm dialog — D3: label says Trash, never permanent delete */}
+      {confirmDeleteId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+        >
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-base font-semibold text-brand-navy mb-2">Move to Trash?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This message will be moved to your Trash folder and can be recovered.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteId(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-brand-navy"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90"
+              >
+                Move to Trash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

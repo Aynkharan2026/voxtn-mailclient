@@ -1,5 +1,7 @@
 "use server";
 
+// A0: DEV_SMTP_* retained for campaigns bulk path, migrate in B-stage.
+
 export type CampaignResult =
   | { ok: true; campaignId: string; queued: number }
   | { ok: false; error: string };
