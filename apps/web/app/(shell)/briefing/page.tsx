@@ -4,6 +4,7 @@ import { dailyBriefingAction } from "@/lib/actions/ai-intel";
 import type { InboxMessage } from "@/app/(shell)/inbox/actions";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function BriefingPage({
   searchParams,

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 
 from .config import settings
 
@@ -35,8 +36,13 @@ async def _gateway_chat(model: str, messages: list[dict[str, str]]) -> str:
         "messages": messages,
         "temperature": 0,
     }
-    async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="gateway timeout") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="gateway error") from exc
     data = resp.json()
     return data["choices"][0]["message"]["content"]

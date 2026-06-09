@@ -234,20 +234,18 @@ export function ComposeForm({
   return (
     <div className="flex flex-col gap-4">
       {/* Datalist for recipient autocomplete — derived from recent senders */}
-      {contactSuggestions.length > 0 && (
-        <datalist id="recipient-suggestions" data-testid="recipient-autocomplete">
-          {contactSuggestions.map((email) => (
-            <option key={email} value={email} />
-          ))}
-        </datalist>
-      )}
+      <datalist id="recipient-options" data-testid="recipient-autocomplete">
+        {contactSuggestions.map((email) => (
+          <option key={email} value={email} />
+        ))}
+      </datalist>
 
       <RecipientRow
         label="To"
         value={to}
         onChange={setTo}
         placeholder="recipient@example.com"
-        listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
+        listId="recipient-options"
         trailing={
           !showCcBcc && (
             <button
@@ -268,14 +266,14 @@ export function ComposeForm({
             value={cc}
             onChange={setCc}
             placeholder="cc@example.com"
-            listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
+            listId="recipient-options"
           />
           <RecipientRow
             label="Bcc"
             value={bcc}
             onChange={setBcc}
             placeholder="bcc@example.com"
-            listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
+            listId="recipient-options"
           />
         </>
       )}

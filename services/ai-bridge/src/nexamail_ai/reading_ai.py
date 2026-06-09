@@ -164,8 +164,19 @@ async def daily_briefing(req: DailyBriefingRequest) -> dict[str, Any]:
     if not settings.gateway_token:
         raise HTTPException(status_code=503, detail="gateway not configured")
 
+    # Cap at 40 messages; truncate text fields to keep the prompt bounded.
+    _BRIEFING_MAX_MSGS = 40
+    _FIELD_MAX_CHARS = 200
+    capped = req.messages[:_BRIEFING_MAX_MSGS]
+    truncated: list[dict[str, Any]] = []
+    for msg in capped:
+        entry: dict[str, Any] = dict(msg)
+        for field in ("subject", "snippet", "body"):
+            if isinstance(entry.get(field), str) and len(entry[field]) > _FIELD_MAX_CHARS:
+                entry[field] = entry[field][:_FIELD_MAX_CHARS]
+        truncated.append(entry)
     inbox_text = "\n---\n".join(
-        json.dumps(msg, ensure_ascii=False) for msg in req.messages
+        json.dumps(m, ensure_ascii=False) for m in truncated
     )
     model_alias = "llama-3.1-8b-local" if detect_tamil(inbox_text) else "lfm2.5-8b"
     user_content = frame_untrusted(inbox_text)

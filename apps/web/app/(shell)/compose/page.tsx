@@ -4,6 +4,7 @@ import { getDefaultSignatureAction } from "@/app/(shell)/settings/signatures/act
 import { listInboxAction } from "@/app/(shell)/inbox/actions";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // D4: Accept reply prefill from searchParams (set by inbox reply action)
 export default async function ComposePage({

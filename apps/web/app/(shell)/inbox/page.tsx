@@ -18,6 +18,7 @@ import { summarizeThreadAction, semanticSearchAction } from "@/lib/actions/ai-in
 import { canMutate } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // D3: read active account from searchParams.account ?? voxmail_account cookie ?? default
 export default async function InboxPage({
