@@ -7,10 +7,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .billing_routes import billing_router, webhook_router
+from .compose_ai import compose_router
 from .config import settings
 from .crm import router as crm_router
 from .db import close_pool, init_pool
 from .draft import draft_router
+from .reading_ai import reading_router
 from .realtime import sio
 from .signatures import router as signatures_router
 from .tenants import router as tenants_router
@@ -42,6 +44,8 @@ fastapi_app.include_router(webhook_router)
 fastapi_app.include_router(tenants_router)
 fastapi_app.include_router(triage_router)
 fastapi_app.include_router(draft_router)
+fastapi_app.include_router(compose_router)
+fastapi_app.include_router(reading_router)
 
 
 class HealthResponse(BaseModel):

@@ -7,16 +7,13 @@ training; content never leaves VoxTN infra.
 import json
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .auth import require_internal_token
 from .config import settings
+from .gateway import _gateway_chat
 from .utils import frame_untrusted
-
-# Gateway timeout (seconds)
-_GATEWAY_TIMEOUT = 20.0
 
 # Tamil Unicode block: U+0B80–U+0BFF
 _TAMIL_LOW = 0x0B80
@@ -41,28 +38,6 @@ _SYSTEM_PROMPT = (
 def detect_tamil(text: str) -> bool:
     """Return True if *text* contains at least one Tamil-script codepoint (U+0B80-U+0BFF)."""
     return any(_TAMIL_LOW <= ord(ch) <= _TAMIL_HIGH for ch in text)
-
-
-async def _gateway_chat(model: str, messages: list[dict[str, str]]) -> str:
-    """Call the sovereign gateway chat-completions endpoint and return the reply content."""
-    url = settings.gateway_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.gateway_token}",
-        "Content-Type": "application/json",
-        # Zero-retention / no-train assertion — content stays within VoxTN infra.
-        "X-VoxTN-No-Retain": "1",
-        "X-No-Train": "1",
-    }
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0,
-    }
-    async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
 
 
 async def classify(
