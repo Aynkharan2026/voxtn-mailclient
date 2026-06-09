@@ -8,7 +8,7 @@ import {
   listSignaturesAction,
   setDefaultSignatureAction,
   type Signature,
-} from "@/app/settings/signatures/actions";
+} from "@/app/(shell)/settings/signatures/actions";
 
 export function SignatureManager({ initial }: { initial: Signature[] }) {
   const [signatures, setSignatures] = useState<Signature[]>(initial);

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Editor } from "@/components/composer/Editor";
-import { sendCampaignAction } from "@/app/campaigns/actions";
+import { sendCampaignAction } from "@/app/(shell)/campaigns/actions";
 
 type Status =
   | { state: "idle" }

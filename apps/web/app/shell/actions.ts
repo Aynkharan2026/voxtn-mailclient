@@ -1,26 +1,8 @@
 "use server";
 
-export type InboxMessage = {
-  message_id: string;
-  from: { name: string; email: string };
-  subject: string;
-  date: string;
-  body?: { text?: string; html?: string } | string;
-};
+// Shell-level server actions shared across the unified app shell.
 
-export type ListInboxResult =
-  | { ok: true; messages: InboxMessage[] }
-  | { ok: false; error: string };
-
-export type GetMessageResult =
-  | { ok: true; message: InboxMessage }
-  | { ok: false; error: string };
-
-// --- in-memory token cache ---
-let cachedToken: string | null = null;
-let tokenExpiresAt: number = 0;
-const TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutes
-
+// --- MCP helpers (mirrors inbox/actions.ts pattern) ---
 function getMcpConfig():
   | { ok: true; tokenUrl: string; clientId: string; clientSecret: string; audience: string; mcpUrl: string }
   | { ok: false; error: string } {
@@ -33,30 +15,34 @@ function getMcpConfig():
   if (!tokenUrl || !clientId || !clientSecret || !audience || !mcpUrl) {
     return {
       ok: false,
-      error:
-        "server not configured — set VOXMAIL_MCP_* in apps/web/.env.local",
+      error: "server not configured — set VOXMAIL_MCP_* in apps/web/.env.local",
     };
   }
   return { ok: true, tokenUrl, clientId, clientSecret, audience, mcpUrl };
 }
 
-async function mintVoxmailToken(forceRefresh = false): Promise<string> {
+const tokenCache: Record<string, { token: string; expiresAt: number }> = {};
+const TOKEN_TTL_MS = 50 * 60 * 1000;
+
+async function mintToken(
+  scope: "voxmail.read" | "voxmail.write" = "voxmail.read",
+  forceRefresh = false,
+): Promise<string> {
   const now = Date.now();
-  if (!forceRefresh && cachedToken && now < tokenExpiresAt) {
-    return cachedToken;
+  const cached = tokenCache[scope];
+  if (!forceRefresh && cached && now < cached.expiresAt) {
+    return cached.token;
   }
 
   const cfg = getMcpConfig();
-  if (!cfg.ok) {
-    throw new Error(cfg.error);
-  }
+  if (!cfg.ok) throw new Error(cfg.error);
 
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: cfg.clientId,
     client_secret: cfg.clientSecret,
     audience: cfg.audience,
-    scope: "voxmail.read",
+    scope,
   });
 
   const res = await fetch(cfg.tokenUrl, {
@@ -72,20 +58,20 @@ async function mintVoxmailToken(forceRefresh = false): Promise<string> {
   }
 
   const data = (await res.json()) as { access_token: string };
-  cachedToken = data.access_token;
-  tokenExpiresAt = now + TOKEN_TTL_MS;
-  return cachedToken;
+  tokenCache[scope] = { token: data.access_token, expiresAt: now + TOKEN_TTL_MS };
+  return data.access_token;
 }
 
 async function mcpPost<T>(
   path: string,
   reqBody: Record<string, unknown>,
+  scope: "voxmail.read" | "voxmail.write" = "voxmail.read",
   retry = true,
 ): Promise<T> {
   const cfg = getMcpConfig();
   if (!cfg.ok) throw new Error(cfg.error);
 
-  let token = await mintVoxmailToken();
+  let token = await mintToken(scope);
 
   const doFetch = async (t: string) =>
     fetch(`${cfg.mcpUrl}/${path}`, {
@@ -100,9 +86,8 @@ async function mcpPost<T>(
 
   let res = await doFetch(token);
 
-  // Re-mint on 401 once
   if (res.status === 401 && retry) {
-    token = await mintVoxmailToken(true);
+    token = await mintToken(scope, true);
     res = await doFetch(token);
   }
 
@@ -114,40 +99,53 @@ async function mcpPost<T>(
   return res.json() as Promise<T>;
 }
 
-export async function listInboxAction(): Promise<ListInboxResult> {
-  const cfg = getMcpConfig();
-  if (!cfg.ok) return { ok: false, error: cfg.error };
+export type Account = {
+  email_address: string;
+  display_name: string;
+  provider: string;
+  active: boolean;
+};
 
-  try {
-    const data = await mcpPost<{ messages: InboxMessage[] }>(
-      "voxmail_list_unread/call",
-      { limit: 50 },
-    );
-    return { ok: true, messages: data.messages ?? [] };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+export type ListAccountsResult =
+  | { ok: true; accounts: Account[] }
+  | { ok: false; error: string; accounts: Account[] };
+
+const DEFAULT_ACCOUNT =
+  process.env.NEXT_PUBLIC_DEFAULT_ACCOUNT ?? "mcp@voxtn.com";
+
+// D4: listAccountsAction — mints a read-scoped token, calls voxmail_list_accounts/call.
+// Graceful fallback: if the call errors or returns empty, returns at least the default account.
+export async function listAccountsAction(): Promise<ListAccountsResult> {
+  const fallback: Account[] = [
+    {
+      email_address: DEFAULT_ACCOUNT,
+      display_name: DEFAULT_ACCOUNT,
+      provider: "default",
+      active: true,
+    },
+  ];
+
+  const cfg = getMcpConfig();
+  if (!cfg.ok) {
+    return { ok: false, error: cfg.error, accounts: fallback };
   }
-}
-
-export async function getMessageAction(
-  messageId: string,
-): Promise<GetMessageResult> {
-  const cfg = getMcpConfig();
-  if (!cfg.ok) return { ok: false, error: cfg.error };
 
   try {
-    const data = await mcpPost<{ message: InboxMessage }>(
-      "voxmail_get_message/call",
-      { message_id: messageId },
+    const data = await mcpPost<{ accounts: Account[] }>(
+      "voxmail_list_accounts/call",
+      {},
+      "voxmail.read",
     );
-    return { ok: true, message: data.message };
+    const accounts = data.accounts && data.accounts.length > 0
+      ? data.accounts
+      : fallback;
+    return { ok: true, accounts };
   } catch (err) {
+    // Graceful degradation: new MCP tool may not be live yet (404/500)
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+      accounts: fallback,
     };
   }
 }

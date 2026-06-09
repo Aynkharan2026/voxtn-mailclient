@@ -7,7 +7,7 @@ import {
   cancelSendAction,
   sendEmailAction,
   voiceToEmailAction,
-} from "@/app/compose/actions";
+} from "@/app/(shell)/compose/actions";
 
 type Status =
   | { state: "idle" }
@@ -22,15 +22,28 @@ const AUTO_DISMISS_MS = 3000;
 
 export function ComposeForm({
   initialHtml = "",
+  prefillTo,
+  prefillCc,
+  prefillSubject,
+  prefillInReplyTo,
+  prefillReferences,
 }: {
   initialHtml?: string;
+  prefillTo?: string;
+  prefillCc?: string;
+  prefillSubject?: string;
+  prefillInReplyTo?: string;
+  prefillReferences?: string;
 }) {
-  const [to, setTo] = useState("");
-  const [cc, setCc] = useState("");
+  const [to, setTo] = useState(prefillTo ?? "");
+  const [cc, setCc] = useState(prefillCc ?? "");
   const [bcc, setBcc] = useState("");
-  const [subject, setSubject] = useState("");
+  const [subject, setSubject] = useState(prefillSubject ?? "");
   const [bodyHtml, setBodyHtml] = useState(initialHtml);
-  const [showCcBcc, setShowCcBcc] = useState(false);
+  // D4: Hold reply-thread identifiers in hidden state; passed to send
+  const [inReplyTo] = useState(prefillInReplyTo);
+  const [references] = useState(prefillReferences);
+  const [showCcBcc, setShowCcBcc] = useState(!!(prefillCc));
   const [status, setStatus] = useState<Status>({ state: "idle" });
   const [isPending, startTransition] = useTransition();
 
@@ -111,6 +124,8 @@ export function ComposeForm({
         bcc: bcc || undefined,
         subject,
         html: bodyHtml,
+        in_reply_to: inReplyTo,
+        references: references,
       });
       if (!res.ok) {
         setStatus({ state: "error", message: res.error });
