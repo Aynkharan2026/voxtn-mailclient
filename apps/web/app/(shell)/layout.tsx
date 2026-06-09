@@ -2,9 +2,12 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { listAccountsAction } from "@/app/shell/actions";
 import { AccountSwitcher } from "@/components/shell/AccountSwitcher";
+import { CommandPalette } from "@/components/shell/CommandPalette";
+import { ShellKeyboardShortcuts } from "@/components/shell/ShellKeyboardShortcuts";
 
 const NAV_FOLDERS = [
   { href: "/inbox", label: "Inbox" },
+  { href: "/briefing", label: "Briefing" },
   { href: "/sent", label: "Sent" },
   { href: "/drafts", label: "Drafts" },
   { href: "/spam", label: "Spam" },
@@ -22,6 +25,12 @@ export default async function ShellLayout({
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Shell-wide keyboard shortcuts (client, renders nothing) */}
+      <ShellKeyboardShortcuts />
+      {/* Global command palette — opened by Cmd/Ctrl+K */}
+      <Suspense fallback={null}>
+        <CommandPalette accounts={accounts} />
+      </Suspense>
       {/* Persistent navy sidebar */}
       <aside className="w-52 flex-shrink-0 bg-brand-navy text-white flex flex-col pt-5 pb-4 gap-0">
         {/* Brand wordmark */}

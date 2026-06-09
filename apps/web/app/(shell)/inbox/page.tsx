@@ -14,6 +14,8 @@ import {
 } from "./actions";
 import { triageMessagesAction } from "./triage-actions";
 import { InboxView } from "@/components/inbox/InboxView";
+import { summarizeThreadAction, semanticSearchAction } from "@/lib/actions/ai-intel";
+import { canMutate } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,9 @@ export default async function InboxPage({
     // triage failure must not break inbox render
   }
 
+  // Group 6: determine read-only mode (RBAC gate — server-side)
+  const mutateAllowed = await canMutate();
+
   return (
     <InboxView
       initialMessages={result.messages}
@@ -73,8 +78,11 @@ export default async function InboxPage({
       archiveAction={archiveAction}
       deleteAction={deleteAction}
       markReadAction={markReadAction}
+      summarizeThreadAction={summarizeThreadAction}
+      semanticSearchAction={semanticSearchAction}
       triage={triageMap}
       activeAccount={activeAccount}
+      readOnly={!mutateAllowed}
     />
   );
 }

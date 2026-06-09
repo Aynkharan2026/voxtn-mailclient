@@ -30,6 +30,7 @@ export function ComposeForm({
   prefillSubject,
   prefillInReplyTo,
   prefillReferences,
+  contactSuggestions = [],
 }: {
   initialHtml?: string;
   prefillTo?: string;
@@ -37,6 +38,8 @@ export function ComposeForm({
   prefillSubject?: string;
   prefillInReplyTo?: string;
   prefillReferences?: string;
+  /** Recipient autocomplete — email addresses from recent senders */
+  contactSuggestions?: string[];
 }) {
   const [to, setTo] = useState(prefillTo ?? "");
   const [cc, setCc] = useState(prefillCc ?? "");
@@ -230,11 +233,21 @@ export function ComposeForm({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Datalist for recipient autocomplete — derived from recent senders */}
+      {contactSuggestions.length > 0 && (
+        <datalist id="recipient-suggestions" data-testid="recipient-autocomplete">
+          {contactSuggestions.map((email) => (
+            <option key={email} value={email} />
+          ))}
+        </datalist>
+      )}
+
       <RecipientRow
         label="To"
         value={to}
         onChange={setTo}
         placeholder="recipient@example.com"
+        listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
         trailing={
           !showCcBcc && (
             <button
@@ -255,12 +268,14 @@ export function ComposeForm({
             value={cc}
             onChange={setCc}
             placeholder="cc@example.com"
+            listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
           />
           <RecipientRow
             label="Bcc"
             value={bcc}
             onChange={setBcc}
             placeholder="bcc@example.com"
+            listId={contactSuggestions.length > 0 ? "recipient-suggestions" : undefined}
           />
         </>
       )}
@@ -432,12 +447,14 @@ function RecipientRow({
   onChange,
   placeholder,
   trailing,
+  listId,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   trailing?: React.ReactNode;
+  listId?: string;
 }) {
   return (
     <label className="flex items-center gap-3 border-b pb-2">
@@ -447,6 +464,7 @@ function RecipientRow({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        list={listId}
         className="flex-1 outline-none bg-transparent"
       />
       {trailing}

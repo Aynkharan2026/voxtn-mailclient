@@ -1,5 +1,7 @@
 "use server";
 
+import { assertCanMutate } from "@/lib/permissions";
+
 export type InboxMessage = {
   message_id: string;
   from: { name: string; email: string };
@@ -253,6 +255,8 @@ export async function moveAction(
   destFolder: string,
   account?: string,
 ): Promise<MoveResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   try {
     const reqBody: Record<string, unknown> = { message_id: messageId, dest_folder: destFolder };
     if (account) reqBody.account = account;
@@ -277,6 +281,8 @@ export async function archiveAction(messageId: string, account?: string): Promis
 
 // D2: Delete = move to Trash (recoverable); D3: accept account
 export async function deleteAction(messageId: string, account?: string): Promise<DeleteResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   try {
     const reqBody: Record<string, unknown> = { message_id: messageId };
     if (account) reqBody.account = account;
@@ -296,6 +302,8 @@ export async function deleteAction(messageId: string, account?: string): Promise
 
 // D2: Mark read — write scope; D3: accept account
 export async function markReadAction(messageId: string, account?: string): Promise<MarkReadResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   try {
     const reqBody: Record<string, unknown> = { message_id: messageId };
     if (account) reqBody.account = account;
@@ -367,6 +375,8 @@ export async function flagAction(
   account?: string,
   flagged = true,
 ): Promise<FlagResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   try {
     const reqBody: Record<string, unknown> = { message_id: messageId, flagged };
     if (account) reqBody.account = account;
@@ -391,6 +401,8 @@ export async function labelAction(
   add?: string,
   remove?: string,
 ): Promise<LabelResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   try {
     const reqBody: Record<string, unknown> = { message_id: messageId };
     if (account) reqBody.account = account;

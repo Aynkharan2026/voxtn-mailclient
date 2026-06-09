@@ -2,6 +2,8 @@
 
 // D5: send via voxmail_send/call MCP tool (voxmail.write scope); DEV_SMTP_* removed from this path.
 
+import { assertCanMutate } from "@/lib/permissions";
+
 type ComposePayload = {
   to: string;
   cc?: string;
@@ -131,6 +133,8 @@ async function mcpWritePost<T>(
 export async function sendEmailAction(
   payload: ComposePayload,
 ): Promise<SendResult> {
+  const guard = await assertCanMutate();
+  if (!guard.ok) return guard;
   const cfg = getMcpConfig();
   if (!cfg.ok) return { ok: false, error: cfg.error };
 

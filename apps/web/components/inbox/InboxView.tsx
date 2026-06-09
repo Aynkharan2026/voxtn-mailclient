@@ -16,6 +16,7 @@ import type {
   DeleteResult,
   MarkReadResult,
 } from "@/app/(shell)/inbox/actions";
+import type { SummarizeResult, SemanticSearchResult } from "@/lib/actions/ai-intel";
 
 function formatRelativeDate(dateStr: string, mounted: boolean): string {
   const date = new Date(dateStr);
@@ -72,8 +73,11 @@ export function InboxView({
   archiveAction,
   deleteAction,
   markReadAction,
+  summarizeThreadAction,
+  semanticSearchAction,
   triage = {},
   activeAccount,
+  readOnly = false,
 }: {
   initialMessages: InboxMessage[];
   getMessageAction: (id: string, account?: string) => Promise<GetMessageResult>;
@@ -86,8 +90,11 @@ export function InboxView({
   archiveAction: (id: string, account?: string) => Promise<ArchiveResult>;
   deleteAction: (id: string, account?: string) => Promise<DeleteResult>;
   markReadAction: (id: string, account?: string) => Promise<MarkReadResult>;
+  summarizeThreadAction?: (messages: ThreadMessage[]) => Promise<SummarizeResult>;
+  semanticSearchAction?: (query: string, candidates: { id: string; subject: string; snippet?: string }[]) => Promise<SemanticSearchResult>;
   triage?: Record<string, TriageState>;
   activeAccount?: string;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -123,14 +130,53 @@ export function InboxView({
   const [threadError, setThreadError] = useState<string | null>(null);
   const [threadPending, setThreadPending] = useState(false);
 
+  // W2-intel: Thread summary
+  const [summary, setSummary] = useState<{ headline: string; bullets: string[] } | null>(null);
+  const [summaryPending, setSummaryPending] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+
+  // W2-intel: NL semantic search
+  const [nlQuery, setNlQuery] = useState("");
+  const [nlRanked, setNlRanked] = useState<string[] | null>(null); // null = no search active
+  const [nlPending, setNlPending] = useState(false);
+
   const showToast = useCallback((text: string, variant: "success" | "error") => {
     setToast({ text, variant });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
+  // W2-intel: NL semantic search handler
+  const handleNlSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setNlRanked(null);
+      return;
+    }
+    if (!semanticSearchAction) return;
+    setNlPending(true);
+    try {
+      const candidates = initialMessages
+        .filter((m) => !removedIds.has(m.message_id))
+        .map((m) => ({
+          id: m.message_id,
+          subject: m.subject,
+          snippet:
+            typeof m.body === "string"
+              ? m.body.slice(0, 150)
+              : m.body?.text?.slice(0, 150),
+        }));
+      const res = await semanticSearchAction(q, candidates);
+      if (res.ok) {
+        setNlRanked(res.ranked);
+      }
+    } finally {
+      setNlPending(false);
+    }
+  }, [semanticSearchAction, initialMessages, removedIds]);
+
   const filteredMessages = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return initialMessages.filter((m) => {
+    // Base filter (remove archived/deleted + local text search)
+    const base = initialMessages.filter((m) => {
       if (removedIds.has(m.message_id)) return false;
       if (!q) return true;
       return (
@@ -139,7 +185,15 @@ export function InboxView({
         m.subject.toLowerCase().includes(q)
       );
     });
-  }, [initialMessages, search, removedIds]);
+    // If NL semantic search has results, reorder + filter by ranked ids
+    if (nlRanked !== null && nlRanked.length > 0) {
+      const rankIndex = new Map(nlRanked.map((id, i) => [id, i]));
+      return base
+        .filter((m) => rankIndex.has(m.message_id))
+        .sort((a, b) => (rankIndex.get(a.message_id) ?? 9999) - (rankIndex.get(b.message_id) ?? 9999));
+    }
+    return base;
+  }, [initialMessages, search, removedIds, nlRanked]);
 
   function handleSelectMessage(msg: InboxMessage) {
     setSelectedMessage(msg);
@@ -147,6 +201,8 @@ export function InboxView({
     setBodyError(null);
     setThreadMessages(null);
     setThreadError(null);
+    setSummary(null);
+    setSummaryExpanded(false);
     setShowLabelInput(false);
     setLabelInput("");
     startTransition(async () => {
@@ -157,12 +213,23 @@ export function InboxView({
         setBodyError(result.error);
       }
     });
-    // Fetch thread in background
+    // Fetch thread in background, then summarize
     setThreadPending(true);
     getThreadAction(msg.message_id, activeAccount).then((res) => {
       setThreadPending(false);
       if (res.ok) {
         setThreadMessages(res.messages);
+        // Fetch thread summary if action is available and thread has messages
+        if (summarizeThreadAction && res.messages.length > 0) {
+          setSummaryPending(true);
+          summarizeThreadAction(res.messages).then((sumRes) => {
+            setSummaryPending(false);
+            if (sumRes.ok) {
+              setSummary({ headline: sumRes.headline, bullets: sumRes.bullets });
+            }
+            // Silently ignore summary failure
+          }).catch(() => { setSummaryPending(false); });
+        }
       } else {
         setThreadError(res.error);
       }
@@ -405,7 +472,8 @@ export function InboxView({
             {activeAccount}
           </div>
         )}
-        <div className="p-3 border-b border-gray-100">
+        <div className="p-3 border-b border-gray-100 space-y-2">
+          {/* Local text search */}
           <input
             type="search"
             placeholder="Search inbox…"
@@ -413,6 +481,45 @@ export function InboxView({
             onChange={(e) => setSearch(e.target.value)}
             className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-amber"
           />
+          {/* NL semantic search */}
+          <div className="relative">
+            <input
+              data-testid="nl-search"
+              type="search"
+              placeholder="AI search (describe what you're looking for)…"
+              value={nlQuery}
+              onChange={(e) => setNlQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void handleNlSearch(nlQuery);
+                } else if (e.key === "Escape") {
+                  setNlQuery("");
+                  setNlRanked(null);
+                }
+              }}
+              className="w-full px-3 py-1.5 text-sm border border-blue-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-300 pr-16"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {nlPending && (
+                <span className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+              )}
+              {nlRanked !== null && (
+                <button
+                  type="button"
+                  onClick={() => { setNlQuery(""); setNlRanked(null); }}
+                  className="text-xs text-gray-400 hover:text-brand-navy"
+                  aria-label="Clear AI search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+          {nlRanked !== null && (
+            <p className="text-xs text-blue-500">
+              Showing {filteredMessages.length} AI-matched result{filteredMessages.length !== 1 ? "s" : ""}
+            </p>
+          )}
         </div>
         <ul className="flex-1 overflow-y-auto divide-y divide-gray-100">
           {filteredMessages.length === 0 ? (
@@ -506,12 +613,51 @@ export function InboxView({
             </div>
             <hr className="mb-4 border-gray-100" />
 
+            {/* W2-intel: Thread summary */}
+            {(summaryPending || summary) && (
+              <div data-testid="thread-summary" className="mb-4 border border-blue-100 rounded-lg bg-blue-50/60 overflow-hidden">
+                {summaryPending ? (
+                  <div className="px-4 py-3 text-xs text-blue-400 animate-pulse">Summarizing thread…</div>
+                ) : summary ? (
+                  <details
+                    open={summaryExpanded}
+                    onToggle={(e) => setSummaryExpanded((e.target as HTMLDetailsElement).open)}
+                  >
+                    <summary className="px-4 py-2.5 text-sm font-medium text-blue-700 cursor-pointer select-none hover:bg-blue-50 list-none flex items-center gap-2">
+                      <span className="text-blue-400">◆</span>
+                      <span className="flex-1 truncate">{summary.headline}</span>
+                      <span className="text-xs text-blue-400 flex-shrink-0">
+                        {summaryExpanded ? "▲" : "▼"}
+                      </span>
+                    </summary>
+                    {summaryExpanded && summary.bullets.length > 0 && (
+                      <ul className="px-5 pb-3 pt-1 space-y-1">
+                        {summary.bullets.map((b, i) => (
+                          <li key={i} className="text-xs text-blue-700 flex items-start gap-1.5">
+                            <span className="text-blue-300 flex-shrink-0 mt-0.5">•</span>
+                            {b}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </details>
+                ) : null}
+              </div>
+            )}
+
+            {/* Read-only banner */}
+            {readOnly && (
+              <div className="mb-3 px-3 py-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-700 font-medium">
+                Read-only mode — mutations are disabled
+              </div>
+            )}
+
             {/* D3 + W2: Action button row */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <button
                 data-testid="reply-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleReply}
                 className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
               >
@@ -520,7 +666,7 @@ export function InboxView({
               <button
                 data-testid="replyall-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleReplyAll}
                 className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
               >
@@ -529,7 +675,7 @@ export function InboxView({
               <button
                 data-testid="forward-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleForward}
                 className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
               >
@@ -538,7 +684,7 @@ export function InboxView({
               <button
                 data-testid="star-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleStar}
                 aria-label={selectedMessage && starredIds.has(selectedMessage.message_id) ? "Unstar" : "Star"}
                 className={[
@@ -553,7 +699,7 @@ export function InboxView({
               <button
                 data-testid="label-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={() => setShowLabelInput((v) => !v)}
                 className="px-3 py-1.5 text-sm rounded border border-gray-300 text-gray-600 font-medium hover:border-brand-navy hover:text-brand-navy transition disabled:opacity-40"
               >
@@ -562,7 +708,7 @@ export function InboxView({
               <button
                 data-testid="archive-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleArchive}
                 className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
               >
@@ -571,7 +717,7 @@ export function InboxView({
               <button
                 data-testid="delete-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={() => selectedMessage && setConfirmDeleteId(selectedMessage.message_id)}
                 className="px-3 py-1.5 text-sm rounded border border-brand-navy text-brand-navy font-medium hover:bg-brand-navy hover:text-white transition disabled:opacity-40"
               >
@@ -580,7 +726,7 @@ export function InboxView({
               <button
                 data-testid="markread-btn"
                 type="button"
-                disabled={!selectedMessage || actionPending}
+                disabled={!selectedMessage || actionPending || readOnly}
                 onClick={handleMarkRead}
                 className={[
                   "px-3 py-1.5 text-sm rounded border font-medium transition disabled:opacity-40",
