@@ -65,11 +65,11 @@ export function InboxView({
   activeAccount,
 }: {
   initialMessages: InboxMessage[];
-  getMessageAction: (id: string) => Promise<GetMessageResult>;
-  replyDraftAction: (id: string) => Promise<ReplyDraftResult>;
-  archiveAction: (id: string) => Promise<ArchiveResult>;
-  deleteAction: (id: string) => Promise<DeleteResult>;
-  markReadAction: (id: string) => Promise<MarkReadResult>;
+  getMessageAction: (id: string, account?: string) => Promise<GetMessageResult>;
+  replyDraftAction: (id: string, account?: string) => Promise<ReplyDraftResult>;
+  archiveAction: (id: string, account?: string) => Promise<ArchiveResult>;
+  deleteAction: (id: string, account?: string) => Promise<DeleteResult>;
+  markReadAction: (id: string, account?: string) => Promise<MarkReadResult>;
   triage?: Record<string, TriageState>;
   activeAccount?: string;
 }) {
@@ -119,7 +119,7 @@ export function InboxView({
     setLoadedBody(null);
     setBodyError(null);
     startTransition(async () => {
-      const result = await getMessageAction(msg.message_id);
+      const result = await getMessageAction(msg.message_id, activeAccount);
       if (result.ok) {
         setLoadedBody(result.message);
       } else {
@@ -135,7 +135,7 @@ export function InboxView({
     if (!selectedMessage) return;
     setActionPending(true);
     try {
-      const draft = await replyDraftAction(selectedMessage.message_id);
+      const draft = await replyDraftAction(selectedMessage.message_id, activeAccount);
       let params: Record<string, string>;
       if (draft.ok) {
         params = {
@@ -163,14 +163,14 @@ export function InboxView({
     } finally {
       setActionPending(false);
     }
-  }, [selectedMessage, displayMessage, replyDraftAction, router]);
+  }, [selectedMessage, displayMessage, replyDraftAction, router, activeAccount]);
 
   const handleArchive = useCallback(async () => {
     if (!selectedMessage) return;
     setActionPending(true);
     const id = selectedMessage.message_id;
     try {
-      const res = await archiveAction(id);
+      const res = await archiveAction(id, activeAccount);
       if (res.ok) {
         setRemovedIds((prev) => new Set(prev).add(id));
         setSelectedMessage(null);
@@ -182,7 +182,7 @@ export function InboxView({
     } finally {
       setActionPending(false);
     }
-  }, [selectedMessage, archiveAction, showToast]);
+  }, [selectedMessage, archiveAction, showToast, activeAccount]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!confirmDeleteId) return;
@@ -190,7 +190,7 @@ export function InboxView({
     setActionPending(true);
     const id = confirmDeleteId;
     try {
-      const res = await deleteAction(id);
+      const res = await deleteAction(id, activeAccount);
       if (res.ok) {
         setRemovedIds((prev) => new Set(prev).add(id));
         setSelectedMessage(null);
@@ -202,14 +202,14 @@ export function InboxView({
     } finally {
       setActionPending(false);
     }
-  }, [confirmDeleteId, deleteAction, showToast]);
+  }, [confirmDeleteId, deleteAction, showToast, activeAccount]);
 
   const handleMarkRead = useCallback(async () => {
     if (!selectedMessage) return;
     setActionPending(true);
     const id = selectedMessage.message_id;
     try {
-      const res = await markReadAction(id);
+      const res = await markReadAction(id, activeAccount);
       if (res.ok) {
         setReadIds((prev) => new Set(prev).add(id));
         showToast("Marked as read", "success");
@@ -219,7 +219,7 @@ export function InboxView({
     } finally {
       setActionPending(false);
     }
-  }, [selectedMessage, markReadAction, showToast]);
+  }, [selectedMessage, markReadAction, showToast, activeAccount]);
 
   return (
     <div className="flex h-full overflow-hidden bg-gray-50 min-w-0">

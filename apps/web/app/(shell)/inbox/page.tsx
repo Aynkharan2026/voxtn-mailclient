@@ -55,21 +55,14 @@ export default async function InboxPage({
     // triage failure must not break inbox render
   }
 
-  // D3: bind account into action closures so InboxView passes it through
-  const boundGetMessage = (id: string) => getMessageAction(id, activeAccount);
-  const boundReplyDraft = (id: string) => replyDraftAction(id, activeAccount);
-  const boundArchive = (id: string) => archiveAction(id, activeAccount);
-  const boundDelete = (id: string) => deleteAction(id, activeAccount);
-  const boundMarkRead = (id: string) => markReadAction(id, activeAccount);
-
   return (
     <InboxView
       initialMessages={result.messages}
-      getMessageAction={boundGetMessage}
-      replyDraftAction={boundReplyDraft}
-      archiveAction={boundArchive}
-      deleteAction={boundDelete}
-      markReadAction={boundMarkRead}
+      getMessageAction={getMessageAction}
+      replyDraftAction={replyDraftAction}
+      archiveAction={archiveAction}
+      deleteAction={deleteAction}
+      markReadAction={markReadAction}
       triage={triageMap}
       activeAccount={activeAccount}
     />
