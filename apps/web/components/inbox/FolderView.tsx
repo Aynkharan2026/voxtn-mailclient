@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition, useMemo } from "react";
 import Link from "next/link";
-import type { InboxMessage } from "@/app/inbox/actions";
+import type { InboxMessage } from "@/app/(shell)/inbox/actions";
 import type { GetFolderMessageResult } from "@/app/folders/actions";
 
 type FolderKey = "inbox" | "sent" | "drafts" | "spam" | "trash" | "archive";

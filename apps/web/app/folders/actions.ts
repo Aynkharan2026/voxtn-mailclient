@@ -1,6 +1,6 @@
 "use server";
 
-import type { InboxMessage } from "@/app/inbox/actions";
+import type { InboxMessage } from "@/app/(shell)/inbox/actions";
 
 export type ListFolderResult =
   | { ok: true; messages: InboxMessage[] }
