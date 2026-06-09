@@ -3,6 +3,11 @@ import {
   listInboxAction,
   getMessageAction,
   replyDraftAction,
+  replyAllAction,
+  forwardAction,
+  flagAction,
+  labelAction,
+  getThreadAction,
   archiveAction,
   deleteAction,
   markReadAction,
@@ -60,6 +65,11 @@ export default async function InboxPage({
       initialMessages={result.messages}
       getMessageAction={getMessageAction}
       replyDraftAction={replyDraftAction}
+      replyAllAction={replyAllAction}
+      forwardAction={forwardAction}
+      flagAction={flagAction}
+      labelAction={labelAction}
+      getThreadAction={getThreadAction}
       archiveAction={archiveAction}
       deleteAction={deleteAction}
       markReadAction={markReadAction}

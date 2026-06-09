@@ -6,6 +6,12 @@ import type {
   InboxMessage,
   GetMessageResult,
   ReplyDraftResult,
+  ReplyAllDraftResult,
+  ForwardDraftResult,
+  FlagResult,
+  LabelResult,
+  GetThreadResult,
+  ThreadMessage,
   ArchiveResult,
   DeleteResult,
   MarkReadResult,
@@ -58,6 +64,11 @@ export function InboxView({
   initialMessages,
   getMessageAction,
   replyDraftAction,
+  replyAllAction,
+  forwardAction,
+  flagAction,
+  labelAction,
+  getThreadAction,
   archiveAction,
   deleteAction,
   markReadAction,
@@ -67,6 +78,11 @@ export function InboxView({
   initialMessages: InboxMessage[];
   getMessageAction: (id: string, account?: string) => Promise<GetMessageResult>;
   replyDraftAction: (id: string, account?: string) => Promise<ReplyDraftResult>;
+  replyAllAction: (id: string, account?: string) => Promise<ReplyAllDraftResult>;
+  forwardAction: (id: string, account?: string) => Promise<ForwardDraftResult>;
+  flagAction: (id: string, account?: string, flagged?: boolean) => Promise<FlagResult>;
+  labelAction: (id: string, account?: string, add?: string, remove?: string) => Promise<LabelResult>;
+  getThreadAction: (id: string, account?: string) => Promise<GetThreadResult>;
   archiveAction: (id: string, account?: string) => Promise<ArchiveResult>;
   deleteAction: (id: string, account?: string) => Promise<DeleteResult>;
   markReadAction: (id: string, account?: string) => Promise<MarkReadResult>;
@@ -95,6 +111,17 @@ export function InboxView({
   const [toast, setToast] = useState<ToastMsg | null>(null);
   // Trash confirm dialog
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // W2: Star/flag state (per message)
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  // W2: Labels state (per message)
+  const [messageLabels, setMessageLabels] = useState<Record<string, string[]>>({});
+  // W2: Label input visibility
+  const [showLabelInput, setShowLabelInput] = useState(false);
+  const [labelInput, setLabelInput] = useState("");
+  // W2: Thread view
+  const [threadMessages, setThreadMessages] = useState<ThreadMessage[] | null>(null);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [threadPending, setThreadPending] = useState(false);
 
   const showToast = useCallback((text: string, variant: "success" | "error") => {
     setToast({ text, variant });
@@ -118,6 +145,10 @@ export function InboxView({
     setSelectedMessage(msg);
     setLoadedBody(null);
     setBodyError(null);
+    setThreadMessages(null);
+    setThreadError(null);
+    setShowLabelInput(false);
+    setLabelInput("");
     startTransition(async () => {
       const result = await getMessageAction(msg.message_id, activeAccount);
       if (result.ok) {
@@ -125,6 +156,18 @@ export function InboxView({
       } else {
         setBodyError(result.error);
       }
+    });
+    // Fetch thread in background
+    setThreadPending(true);
+    getThreadAction(msg.message_id, activeAccount).then((res) => {
+      setThreadPending(false);
+      if (res.ok) {
+        setThreadMessages(res.messages);
+      } else {
+        setThreadError(res.error);
+      }
+    }).catch(() => {
+      setThreadPending(false);
     });
   }
 
@@ -220,6 +263,137 @@ export function InboxView({
       setActionPending(false);
     }
   }, [selectedMessage, markReadAction, showToast, activeAccount]);
+
+  // W2: Reply-all handler
+  const handleReplyAll = useCallback(async () => {
+    if (!selectedMessage) return;
+    setActionPending(true);
+    try {
+      const draft = await replyAllAction(selectedMessage.message_id, activeAccount);
+      let params: Record<string, string>;
+      if (draft.ok) {
+        params = {
+          to: draft.to,
+          subject: draft.subject,
+          body: draft.draft_body,
+          in_reply_to: draft.in_reply_to,
+        };
+        if (draft.cc) params.cc = draft.cc;
+        if (draft.references) params.references = draft.references;
+      } else {
+        // Graceful fallback
+        const fromEmail = displayMessage?.from.email ?? selectedMessage.from.email;
+        const subject = displayMessage?.subject ?? selectedMessage.subject;
+        const fallbackSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+        params = {
+          to: fromEmail,
+          subject: fallbackSubject,
+          body: "",
+          in_reply_to: selectedMessage.message_id,
+        };
+      }
+      const qs = new URLSearchParams(params).toString();
+      router.push(`/compose?${qs}`);
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, displayMessage, replyAllAction, router, activeAccount]);
+
+  // W2: Forward handler
+  const handleForward = useCallback(async () => {
+    if (!selectedMessage) return;
+    setActionPending(true);
+    try {
+      const draft = await forwardAction(selectedMessage.message_id, activeAccount);
+      let params: Record<string, string>;
+      if (draft.ok) {
+        let body = draft.forwarded_body;
+        if (draft.attachment_note) {
+          body = `${body}\n\n[Attachments: ${draft.attachment_note}]`;
+        }
+        params = {
+          subject: draft.subject,
+          body,
+          to: "",
+        };
+      } else {
+        // Graceful fallback
+        const subject = displayMessage?.subject ?? selectedMessage.subject;
+        const fallbackSubject = subject.startsWith("Fwd:") ? subject : `Fwd: ${subject}`;
+        params = { subject: fallbackSubject, body: "", to: "" };
+      }
+      const qs = new URLSearchParams(params).toString();
+      router.push(`/compose?${qs}`);
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, displayMessage, forwardAction, router, activeAccount]);
+
+  // W2: Star/flag toggle handler
+  const handleStar = useCallback(async () => {
+    if (!selectedMessage) return;
+    const id = selectedMessage.message_id;
+    const currentlyStarred = starredIds.has(id);
+    setActionPending(true);
+    try {
+      const res = await flagAction(id, activeAccount, !currentlyStarred);
+      if (res.ok) {
+        setStarredIds((prev) => {
+          const next = new Set(prev);
+          if (res.flagged) {
+            next.add(id);
+          } else {
+            next.delete(id);
+          }
+          return next;
+        });
+        showToast(res.flagged ? "Starred" : "Unstarred", "success");
+      } else {
+        showToast(`Star failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, flagAction, starredIds, showToast, activeAccount]);
+
+  // W2: Add label handler
+  const handleAddLabel = useCallback(async () => {
+    if (!selectedMessage || !labelInput.trim()) return;
+    const id = selectedMessage.message_id;
+    const label = labelInput.trim();
+    setActionPending(true);
+    try {
+      const res = await labelAction(id, activeAccount, label, undefined);
+      if (res.ok) {
+        setMessageLabels((prev) => ({ ...prev, [id]: res.labels }));
+        setLabelInput("");
+        setShowLabelInput(false);
+        showToast(`Label "${label}" added`, "success");
+      } else {
+        showToast(`Label failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, labelAction, labelInput, showToast, activeAccount]);
+
+  // W2: Remove label handler
+  const handleRemoveLabel = useCallback(async (label: string) => {
+    if (!selectedMessage) return;
+    const id = selectedMessage.message_id;
+    setActionPending(true);
+    try {
+      const res = await labelAction(id, activeAccount, undefined, label);
+      if (res.ok) {
+        setMessageLabels((prev) => ({ ...prev, [id]: res.labels }));
+        showToast(`Label "${label}" removed`, "success");
+      } else {
+        showToast(`Remove label failed: ${res.error}`, "error");
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [selectedMessage, labelAction, showToast, activeAccount]);
 
   return (
     <div className="flex h-full overflow-hidden bg-gray-50 min-w-0">
@@ -332,7 +506,7 @@ export function InboxView({
             </div>
             <hr className="mb-4 border-gray-100" />
 
-            {/* D3: Action button row */}
+            {/* D3 + W2: Action button row */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <button
                 data-testid="reply-btn"
@@ -342,6 +516,48 @@ export function InboxView({
                 className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
               >
                 Reply
+              </button>
+              <button
+                data-testid="replyall-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleReplyAll}
+                className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
+              >
+                Reply All
+              </button>
+              <button
+                data-testid="forward-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleForward}
+                className="px-3 py-1.5 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 transition disabled:opacity-40"
+              >
+                Forward
+              </button>
+              <button
+                data-testid="star-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={handleStar}
+                aria-label={selectedMessage && starredIds.has(selectedMessage.message_id) ? "Unstar" : "Star"}
+                className={[
+                  "px-3 py-1.5 text-sm rounded border font-medium transition disabled:opacity-40",
+                  selectedMessage && starredIds.has(selectedMessage.message_id)
+                    ? "border-brand-amber bg-amber-50 text-brand-amber"
+                    : "border-gray-300 text-gray-500 hover:border-brand-amber hover:text-brand-amber",
+                ].join(" ")}
+              >
+                {selectedMessage && starredIds.has(selectedMessage.message_id) ? "★" : "☆"}
+              </button>
+              <button
+                data-testid="label-btn"
+                type="button"
+                disabled={!selectedMessage || actionPending}
+                onClick={() => setShowLabelInput((v) => !v)}
+                className="px-3 py-1.5 text-sm rounded border border-gray-300 text-gray-600 font-medium hover:border-brand-navy hover:text-brand-navy transition disabled:opacity-40"
+              >
+                Label
               </button>
               <button
                 data-testid="archive-btn"
@@ -376,6 +592,57 @@ export function InboxView({
                 {selectedMessage && readIds.has(selectedMessage.message_id) ? "Mark unread" : "Mark read"}
               </button>
             </div>
+
+            {/* W2: Label input */}
+            {showLabelInput && selectedMessage && (
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="text"
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddLabel(); }}
+                  placeholder="Add label…"
+                  className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-amber"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLabel}
+                  disabled={!labelInput.trim() || actionPending}
+                  className="px-2 py-1 text-sm rounded bg-brand-navy text-white font-medium hover:opacity-90 disabled:opacity-40"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowLabelInput(false); setLabelInput(""); }}
+                  className="px-2 py-1 text-sm text-gray-500 hover:text-brand-navy"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* W2: Label chips */}
+            {selectedMessage && messageLabels[selectedMessage.message_id] && messageLabels[selectedMessage.message_id].length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {messageLabels[selectedMessage.message_id].map((label) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
+                  >
+                    {label}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLabel(label)}
+                      aria-label={`Remove label ${label}`}
+                      className="ml-0.5 hover:text-blue-900"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             {isPending && (
               <p className="text-sm text-gray-400 animate-pulse">
@@ -412,6 +679,45 @@ export function InboxView({
                 </p>
               );
             })()}
+
+            {/* W2: Thread view */}
+            <div data-testid="thread-view" className="mt-6">
+              {threadPending && (
+                <p className="text-xs text-gray-400 animate-pulse">Loading thread…</p>
+              )}
+              {threadError && (
+                <p className="text-xs text-red-500">Thread unavailable: {threadError}</p>
+              )}
+              {!threadPending && !threadError && threadMessages && threadMessages.length > 1 && (
+                <details open className="border border-gray-100 rounded">
+                  <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 select-none">
+                    Thread ({threadMessages.length} messages)
+                  </summary>
+                  <ol className="divide-y divide-gray-100">
+                    {[...threadMessages]
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .map((tm) => (
+                        <li key={tm.message_id} className="px-3 py-2">
+                          <div className="flex items-center gap-2 text-xs text-gray-600">
+                            <span className="font-medium truncate max-w-[140px]">
+                              {tm.from.name || tm.from.email}
+                            </span>
+                            <span className="ml-auto text-gray-400 flex-shrink-0">
+                              {formatRelativeDate(tm.date, mounted)}
+                            </span>
+                          </div>
+                          {tm.subject && (
+                            <div className="text-xs text-gray-700 truncate mt-0.5">{tm.subject}</div>
+                          )}
+                          {tm.snippet && (
+                            <div className="text-xs text-gray-400 truncate mt-0.5">{tm.snippet}</div>
+                          )}
+                        </li>
+                      ))}
+                  </ol>
+                </details>
+              )}
+            </div>
           </article>
         )}
       </div>

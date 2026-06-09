@@ -7,6 +7,9 @@ import {
   cancelSendAction,
   sendEmailAction,
   voiceToEmailAction,
+  transformAction,
+  followUpAction,
+  type TransformOp,
 } from "@/app/(shell)/compose/actions";
 
 type Status =
@@ -52,6 +55,9 @@ export function ComposeForm({
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<EditorHandle | null>(null);
   const [insertingBooking, setInsertingBooking] = useState(false);
+  // W2: AI transform state
+  const [transformingOp, setTransformingOp] = useState<TransformOp | null>(null);
+  const [followingUp, setFollowingUp] = useState(false);
 
   const handleInsertBookingLink = async () => {
     setInsertingBooking(true);
@@ -175,6 +181,50 @@ export function ComposeForm({
     setStatus({ state: "idle" });
   };
 
+  // W2: AI transform — replaces body (or selection) with result
+  const handleTransform = async (op: TransformOp) => {
+    const text = bodyHtml;
+    if (!text.trim()) return;
+    setTransformingOp(op);
+    try {
+      const res = await transformAction(text, op);
+      if (res.ok) {
+        setBodyHtml(res.result);
+      } else {
+        setStatus({ state: "error", message: `Transform failed: ${res.error}` });
+      }
+    } catch (err) {
+      setStatus({
+        state: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setTransformingOp(null);
+    }
+  };
+
+  // W2: Follow-up draft — inserts AI draft into body (never auto-sends)
+  const handleFollowUp = async () => {
+    setFollowingUp(true);
+    try {
+      const threadCtx = prefillInReplyTo ?? subject;
+      const res = await followUpAction(threadCtx);
+      if (res.ok) {
+        const base = bodyHtml ? `${res.draft}<p></p>${bodyHtml}` : res.draft;
+        setBodyHtml(base);
+      } else {
+        setStatus({ state: "error", message: `Follow-up failed: ${res.error}` });
+      }
+    } catch (err) {
+      setStatus({
+        state: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setFollowingUp(false);
+    }
+  };
+
   const sendDisabled =
     isPending || status.state === "sending" || status.state === "pending";
 
@@ -248,6 +298,47 @@ export function ComposeForm({
         >
           <span>📅</span>
           <span>{insertingBooking ? "Inserting…" : "Insert Booking Link"}</span>
+        </button>
+      </div>
+
+      {/* W2: AI transform toolbar */}
+      <div className="flex items-center gap-1.5 flex-wrap border border-gray-200 rounded px-2 py-1.5 bg-gray-50">
+        <span className="text-xs text-gray-400 mr-1">AI:</span>
+        {(
+          [
+            { op: "elaborate" as TransformOp, label: "Elaborate", testid: "tf-elaborate" },
+            { op: "shorten" as TransformOp, label: "Shorten", testid: "tf-shorten" },
+            { op: "rephrase" as TransformOp, label: "Rephrase", testid: "tf-rephrase" },
+            { op: "formal" as TransformOp, label: "Formal", testid: "tf-formal" },
+            { op: "casual" as TransformOp, label: "Casual", testid: "tf-casual" },
+            { op: "fix_grammar" as TransformOp, label: "Fix Grammar", testid: "tf-fixgrammar" },
+          ] as const
+        ).map(({ op, label, testid }) => (
+          <button
+            key={op}
+            type="button"
+            data-testid={testid}
+            disabled={sendDisabled || transformingOp !== null || followingUp}
+            onClick={() => handleTransform(op)}
+            className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:border-brand-amber hover:text-brand-amber transition disabled:opacity-40 flex items-center gap-1"
+          >
+            {transformingOp === op && (
+              <span className="w-3 h-3 rounded-full border-2 border-brand-amber border-t-transparent animate-spin inline-block" />
+            )}
+            {label}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-testid="followup-btn"
+          disabled={sendDisabled || transformingOp !== null || followingUp}
+          onClick={handleFollowUp}
+          className="px-2 py-1 text-xs rounded border border-brand-amber text-brand-amber hover:bg-amber-50 transition disabled:opacity-40 flex items-center gap-1 ml-1"
+        >
+          {followingUp && (
+            <span className="w-3 h-3 rounded-full border-2 border-brand-amber border-t-transparent animate-spin inline-block" />
+          )}
+          Generate follow-up
         </button>
       </div>
 

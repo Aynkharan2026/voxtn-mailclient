@@ -24,6 +24,22 @@ export type VoiceToEmailResult =
   | { ok: true; subject: string; html: string }
   | { ok: false; error: string };
 
+export type TransformOp =
+  | "elaborate"
+  | "shorten"
+  | "rephrase"
+  | "formal"
+  | "casual"
+  | "fix_grammar";
+
+export type TransformResult =
+  | { ok: true; result: string }
+  | { ok: false; error: string };
+
+export type FollowUpResult =
+  | { ok: true; draft: string }
+  | { ok: false; error: string };
+
 // --- MCP helpers (mirror inbox/actions.ts pattern) ---
 function getMcpConfig():
   | { ok: true; tokenUrl: string; clientId: string; clientSecret: string; audience: string; mcpUrl: string }
@@ -201,6 +217,73 @@ export async function cancelSendAction(
       return { ok: false, error: `voxmail-imap ${res.status}: ${detail}` };
     }
     return { ok: true, jobId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: AI transform — calls ai-bridge /ai/transform; mirrors voiceToEmailAction pattern
+export async function transformAction(
+  text: string,
+  op: TransformOp,
+): Promise<TransformResult> {
+  const base = process.env.AI_BRIDGE_URL;
+  const token = process.env.INTERNAL_SERVICE_TOKEN;
+  if (!base || !token) {
+    return { ok: false, error: "server not configured" };
+  }
+  try {
+    const res = await fetch(`${base}/ai/transform`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text, op }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      return { ok: false, error: `voxmail-ai ${res.status}: ${detail}` };
+    }
+    const data = (await res.json()) as { result: string };
+    return { ok: true, result: data.result };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: AI follow-up draft — calls ai-bridge /ai/follow-up; mirrors voiceToEmailAction pattern
+export async function followUpAction(
+  thread: string,
+): Promise<FollowUpResult> {
+  const base = process.env.AI_BRIDGE_URL;
+  const token = process.env.INTERNAL_SERVICE_TOKEN;
+  if (!base || !token) {
+    return { ok: false, error: "server not configured" };
+  }
+  try {
+    const res = await fetch(`${base}/ai/follow-up`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ thread }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      return { ok: false, error: `voxmail-ai ${res.status}: ${detail}` };
+    }
+    const data = (await res.json()) as { draft: string };
+    return { ok: true, draft: data.draft };
   } catch (err) {
     return {
       ok: false,

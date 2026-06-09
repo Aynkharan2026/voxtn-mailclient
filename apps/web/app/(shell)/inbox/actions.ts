@@ -34,6 +34,44 @@ export type ArchiveResult = MoveResult;
 export type DeleteResult = { ok: true; deleted_to_trash: true; trash_folder: string } | { ok: false; error: string };
 export type MarkReadResult = { ok: true } | { ok: false; error: string };
 
+export type ReplyAllDraftResult =
+  | {
+      ok: true;
+      to: string;
+      cc?: string;
+      subject: string;
+      in_reply_to: string;
+      references?: string;
+      quoted_body: string;
+      draft_body: string;
+    }
+  | { ok: false; error: string };
+
+export type ForwardDraftResult =
+  | {
+      ok: true;
+      subject: string;
+      forwarded_body: string;
+      attachment_note?: string;
+    }
+  | { ok: false; error: string };
+
+export type FlagResult = { ok: true; flagged: boolean } | { ok: false; error: string };
+
+export type LabelResult = { ok: true; labels: string[] } | { ok: false; error: string };
+
+export type ThreadMessage = {
+  message_id: string;
+  from: { name: string; email: string };
+  subject: string;
+  date: string;
+  snippet?: string;
+};
+
+export type GetThreadResult =
+  | { ok: true; messages: ThreadMessage[] }
+  | { ok: false; error: string };
+
 // --- in-memory token cache (scoped) ---
 const tokenCache: Record<string, { token: string; expiresAt: number }> = {};
 const TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutes
@@ -267,6 +305,125 @@ export async function markReadAction(messageId: string, account?: string): Promi
       "voxmail.write",
     );
     return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: Reply-all draft — read scope; returns prefill for composer
+export async function replyAllAction(
+  messageId: string,
+  account?: string,
+): Promise<ReplyAllDraftResult> {
+  try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
+    const data = await mcpPost<{
+      to: string;
+      cc?: string;
+      subject: string;
+      in_reply_to: string;
+      references?: string;
+      quoted_body: string;
+      draft_body: string;
+    }>("voxmail_reply_all/call", reqBody, "voxmail.read");
+    return { ok: true, ...data };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: Forward draft — read scope; returns prefill for composer
+export async function forwardAction(
+  messageId: string,
+  account?: string,
+): Promise<ForwardDraftResult> {
+  try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
+    const data = await mcpPost<{
+      subject: string;
+      forwarded_body: string;
+      attachment_note?: string;
+    }>("voxmail_forward/call", reqBody, "voxmail.read");
+    return { ok: true, ...data };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: Flag/star — write scope
+export async function flagAction(
+  messageId: string,
+  account?: string,
+  flagged = true,
+): Promise<FlagResult> {
+  try {
+    const reqBody: Record<string, unknown> = { message_id: messageId, flagged };
+    if (account) reqBody.account = account;
+    const data = await mcpPost<{ flagged: boolean }>(
+      "voxmail_flag/call",
+      reqBody,
+      "voxmail.write",
+    );
+    return { ok: true, flagged: data.flagged ?? flagged };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: Add/remove label — write scope
+export async function labelAction(
+  messageId: string,
+  account?: string,
+  add?: string,
+  remove?: string,
+): Promise<LabelResult> {
+  try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
+    if (add) reqBody.add = add;
+    if (remove) reqBody.remove = remove;
+    const data = await mcpPost<{ labels: string[] }>(
+      "voxmail_label/call",
+      reqBody,
+      "voxmail.write",
+    );
+    return { ok: true, labels: data.labels ?? [] };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// W2: Get thread — read scope
+export async function getThreadAction(
+  messageId: string,
+  account?: string,
+): Promise<GetThreadResult> {
+  try {
+    const reqBody: Record<string, unknown> = { message_id: messageId };
+    if (account) reqBody.account = account;
+    const data = await mcpPost<{ messages: ThreadMessage[] }>(
+      "voxmail_get_thread/call",
+      reqBody,
+      "voxmail.read",
+    );
+    return { ok: true, messages: data.messages ?? [] };
   } catch (err) {
     return {
       ok: false,
