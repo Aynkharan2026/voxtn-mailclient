@@ -17,6 +17,7 @@ import type {
   MarkReadResult,
 } from "@/app/(shell)/inbox/actions";
 import type { SummarizeResult, SemanticSearchResult } from "@/lib/actions/ai-intel";
+import type { TriageState as TriageStateType } from "@/app/(shell)/inbox/triage-actions";
 
 function formatRelativeDate(dateStr: string, mounted: boolean): string {
   const date = new Date(dateStr);
@@ -53,11 +54,7 @@ function getBodyText(
   return { text: body.text, html: body.html };
 }
 
-type TriageState = {
-  priority: "red" | "gold" | "normal";
-  sentiment: string;
-  stop_request: boolean;
-};
+type TriageState = TriageStateType;
 
 type ToastMsg = { text: string; variant: "success" | "error" };
 
@@ -75,7 +72,8 @@ export function InboxView({
   markReadAction,
   summarizeThreadAction,
   semanticSearchAction,
-  triage = {},
+  triageMessagesAction,
+  triage: initialTriage = {},
   activeAccount,
   readOnly = false,
 }: {
@@ -92,6 +90,7 @@ export function InboxView({
   markReadAction: (id: string, account?: string) => Promise<MarkReadResult>;
   summarizeThreadAction?: (messages: ThreadMessage[]) => Promise<SummarizeResult>;
   semanticSearchAction?: (query: string, candidates: { id: string; subject: string; snippet?: string }[]) => Promise<SemanticSearchResult>;
+  triageMessagesAction?: (messages: { message_id: string; subject: string; from: { email: string }; snippet?: string }[]) => Promise<Record<string, TriageState>>;
   triage?: Record<string, TriageState>;
   activeAccount?: string;
   readOnly?: boolean;
@@ -99,6 +98,22 @@ export function InboxView({
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+
+  // P1c/P2b: triage runs client-side after mount to avoid SSR gateway block
+  const [triageMap, setTriageMap] = useState<Record<string, TriageState>>(initialTriage);
+  useEffect(() => {
+    if (!triageMessagesAction || initialMessages.length === 0) return;
+    const candidates = initialMessages.map((m) => ({
+      message_id: m.message_id,
+      subject: m.subject,
+      from: { email: m.from.email },
+      snippet: typeof m.body === "string" ? m.body.slice(0, 150) : m.body?.text?.slice(0, 150),
+    }));
+    triageMessagesAction(candidates)
+      .then((map) => { setTriageMap(map); })
+      .catch(() => { /* triage failure must not break inbox */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [search, setSearch] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(
@@ -554,26 +569,33 @@ export function InboxView({
                     <div className="text-sm text-gray-700 truncate mt-0.5 pl-4">
                       {msg.subject}
                     </div>
-                    {triage[msg.message_id] && (
+                    {triageMap[msg.message_id] ? (
                       <div className="mt-1 pl-4">
-                        {triage[msg.message_id].priority === "red" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                        {triageMap[msg.message_id].priority === "red" ? (
+                          <span data-testid="triage-pill-red" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                             Needs attention
                           </span>
-                        ) : triage[msg.message_id].priority === "gold" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                        ) : triageMap[msg.message_id].priority === "gold" ? (
+                          <span data-testid="triage-pill-gold" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                             High intent
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                          <span data-testid="triage-pill-normal" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                             Neutral
                           </span>
                         )}
                       </div>
-                    )}
+                    ) : triageMessagesAction ? (
+                      <div className="mt-1 pl-4">
+                        <span data-testid="triage-pill-loading" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-200 animate-pulse flex-shrink-0" />
+                          Loading…
+                        </span>
+                      </div>
+                    ) : null}
                   </button>
                 </li>
               );

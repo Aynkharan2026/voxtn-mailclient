@@ -53,16 +53,6 @@ export default async function InboxPage({
     );
   }
 
-  let triageMap: Record<
-    string,
-    { priority: "red" | "gold" | "normal"; sentiment: string; stop_request: boolean }
-  > = {};
-  try {
-    triageMap = await triageMessagesAction(result.messages);
-  } catch {
-    // triage failure must not break inbox render
-  }
-
   // Group 6: determine read-only mode (RBAC gate — server-side)
   const mutateAllowed = await canMutate();
 
@@ -81,7 +71,8 @@ export default async function InboxPage({
       markReadAction={markReadAction}
       summarizeThreadAction={summarizeThreadAction}
       semanticSearchAction={semanticSearchAction}
-      triage={triageMap}
+      triageMessagesAction={triageMessagesAction}
+      triage={{}}
       activeAccount={activeAccount}
       readOnly={!mutateAllowed}
     />

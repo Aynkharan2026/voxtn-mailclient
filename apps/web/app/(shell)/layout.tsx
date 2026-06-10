@@ -35,7 +35,7 @@ export default async function ShellLayout({
       <aside className="w-52 flex-shrink-0 bg-brand-navy text-white flex flex-col pt-5 pb-4 gap-0">
         {/* Brand wordmark */}
         <div className="px-4 pb-3 text-lg font-semibold text-brand-amber tracking-tight">
-          <Link href="/inbox" className="hover:opacity-80 transition">
+          <Link href="/inbox" prefetch={false} className="hover:opacity-80 transition">
             VoxMail
           </Link>
         </div>
@@ -49,6 +49,7 @@ export default async function ShellLayout({
         <div className="px-3 pb-3">
           <Link
             href="/compose"
+            prefetch={false}
             className="flex items-center justify-center gap-1.5 w-full px-3 py-1.5 text-sm rounded bg-brand-amber text-brand-navy font-semibold hover:opacity-90 transition"
           >
             <span aria-hidden="true">+</span>
@@ -62,6 +63,7 @@ export default async function ShellLayout({
             <Link
               key={href}
               href={href}
+              prefetch={false}
               className="flex items-center gap-2 px-4 py-2 text-sm rounded-md mx-2 text-left text-white/80 hover:bg-white/10 transition"
             >
               {label}
@@ -73,18 +75,21 @@ export default async function ShellLayout({
         <div className="flex flex-col gap-0.5 mt-auto px-2 pt-2 border-t border-white/10">
           <Link
             href="/settings/signatures"
+            prefetch={false}
             className="flex items-center gap-2 px-3 py-2 text-xs rounded-md text-white/60 hover:bg-white/10 hover:text-white/90 transition"
           >
             Settings
           </Link>
           <Link
             href="/campaigns/new"
+            prefetch={false}
             className="flex items-center gap-2 px-3 py-2 text-xs rounded-md text-white/60 hover:bg-white/10 hover:text-white/90 transition"
           >
             Campaigns
           </Link>
           <Link
             href="/admin/domains"
+            prefetch={false}
             className="flex items-center gap-2 px-3 py-2 text-xs rounded-md text-white/60 hover:bg-white/10 hover:text-white/90 transition"
           >
             Domains

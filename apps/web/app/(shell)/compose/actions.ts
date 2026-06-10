@@ -264,6 +264,7 @@ export async function transformAction(
 }
 
 // W2: AI follow-up draft — calls ai-bridge /ai/follow-up; mirrors voiceToEmailAction pattern
+// ai-bridge FollowUpRequest.thread is list[dict[str, Any]] — wrap the caller's string in a list of dicts
 export async function followUpAction(
   thread: string,
 ): Promise<FollowUpResult> {
@@ -279,7 +280,7 @@ export async function followUpAction(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ thread }),
+      body: JSON.stringify({ thread: [{ body: thread }] }),
       cache: "no-store",
     });
     if (!res.ok) {
