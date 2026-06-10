@@ -83,6 +83,12 @@ export default async function ShellLayout({
           >
             Campaigns
           </Link>
+          <Link
+            href="/admin/domains"
+            className="flex items-center gap-2 px-3 py-2 text-xs rounded-md text-white/60 hover:bg-white/10 hover:text-white/90 transition"
+          >
+            Domains
+          </Link>
         </div>
       </aside>
 
