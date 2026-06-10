@@ -50,25 +50,25 @@ export function computeDnsRecords(domain: string, dkim: DkimInfo): DnsRecord[] {
     `v=DKIM1; k=rsa; p=<pending>`;
 
   return [
-    // 1. A record — mail subdomain → shared mail server IP
+    // 1. A record — shared mail host (informational; already published, no per-domain action)
     {
       type: "A",
-      name: `mail.${domain}`,
+      name: MAIL_HOST,
       value: MAIL_IP,
       ttl: 300,
-      proxy: "grey-cloud",
-      note: "Must be DNS-only (grey cloud) — proxying breaks SMTP/IMAP.",
+      proxy: "n/a",
+      note: "Shared mail host — already published, no per-domain action.",
     },
 
-    // 2. MX record — domain → mail subdomain
+    // 2. MX record — domain → shared mail host
     {
       type: "MX",
       name: domain,
-      value: `mail.${domain}`,
+      value: MAIL_HOST,
       ttl: 300,
-      proxy: "n/a",
+      proxy: "grey-cloud",
       priority: 10,
-      note: "MX records cannot be proxied.",
+      note: "MX records must be DNS-only (grey cloud).",
     },
 
     // 3. SPF TXT
@@ -98,24 +98,44 @@ export function computeDnsRecords(domain: string, dkim: DkimInfo): DnsRecord[] {
       proxy: "n/a",
     },
 
-    // 6. PTR — shared host, already set at VPS; no per-domain action needed
+    // 6a. CNAME autodiscover → shared mail host
+    {
+      type: "CNAME",
+      name: `autodiscover.${domain}`,
+      value: MAIL_HOST,
+      ttl: 300,
+      proxy: "grey-cloud",
+      note: "CNAME must be DNS-only (grey cloud).",
+    },
+
+    // 6b. CNAME autoconfig → shared mail host
+    {
+      type: "CNAME",
+      name: `autoconfig.${domain}`,
+      value: MAIL_HOST,
+      ttl: 300,
+      proxy: "grey-cloud",
+      note: "CNAME must be DNS-only (grey cloud).",
+    },
+
+    // 6c. SRV autodiscover → shared mail host
+    {
+      type: "SRV",
+      name: `_autodiscover._tcp.${domain}`,
+      value: `0 1 443 ${MAIL_HOST}`,
+      ttl: 300,
+      proxy: "n/a",
+      note: "SRV records are not proxied.",
+    },
+
+    // 7. PTR — shared host, already set at VPS; no per-domain action needed
     {
       type: "PTR",
-      name: `${MAIL_IP} (reverse)`,
+      name: MAIL_IP,
       value: MAIL_HOST,
       ttl: 300,
       proxy: "n/a",
-      note: "Shared mail host — already set at the VPS; no per-domain PTR needed/possible.",
-    },
-
-    // 7. Autodiscover / Autoconfig CNAMEs + SRV
-    {
-      type: "CNAME+SRV",
-      name: `autodiscover.${domain} / autoconfig.${domain} / _autodiscover._tcp.${domain}`,
-      value: `CNAME autodiscover.${domain} → ${MAIL_HOST}\nCNAME autoconfig.${domain} → ${MAIL_HOST}\nSRV _autodiscover._tcp.${domain} 0 1 443 ${MAIL_HOST}`,
-      ttl: 300,
-      proxy: "grey-cloud",
-      note: "CNAMEs must be DNS-only (grey cloud). SRV records are not proxied.",
+      note: "Shared host — already set at VPS, no per-domain action.",
     },
   ];
 }
