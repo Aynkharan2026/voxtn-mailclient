@@ -5,6 +5,22 @@ import type { DkimInfo } from "@/lib/dns-records";
 
 // ---- types ----------------------------------------------------------------
 
+/**
+ * Mailcow returns full domain objects from voxmail_list_domains.
+ * We only need the primitives we actually render.
+ */
+export interface MailcowDomain {
+  domain_name: string;
+  domain?: string; // fallback field some versions use
+  description?: string;
+  active?: number | boolean;
+  def_quota_for_mbox?: number;
+  max_quota_for_mbox?: number;
+  quota_used_in_domain?: number;
+  created?: string;
+  modified?: string;
+}
+
 export type ListDomainsResult =
   | { ok: true; domains: string[] }
   | { ok: false; error: string };
@@ -133,12 +149,28 @@ export async function listDomainsAction(): Promise<ListDomainsResult> {
   if (!cfg.ok) return { ok: false, error: cfg.error };
 
   try {
-    const data = await mcpPost<{ domains: string[] }>(
+    // Mailcow returns an array of domain objects, not plain strings.
+    // We accept both shapes: an object with a `domains` array, or a bare array.
+    const data = await mcpPost<{ domains: (MailcowDomain | string)[] } | (MailcowDomain | string)[]>(
       "voxmail_list_domains/call",
       {},
       "voxmail.read",
     );
-    return { ok: true, domains: data.domains ?? [] };
+
+    const raw: (MailcowDomain | string)[] = Array.isArray(data)
+      ? data
+      : (data as { domains: (MailcowDomain | string)[] }).domains ?? [];
+
+    // Normalise each element to a plain domain-name string.
+    const domains: string[] = raw
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        // Mailcow object — prefer domain_name, fall back to domain field.
+        return (entry as MailcowDomain).domain_name ?? (entry as MailcowDomain).domain ?? "";
+      })
+      .filter(Boolean);
+
+    return { ok: true, domains };
   } catch (err) {
     return {
       ok: false,
