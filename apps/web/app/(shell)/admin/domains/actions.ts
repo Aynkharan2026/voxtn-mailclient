@@ -222,12 +222,15 @@ export async function getDomainRecordsAction(
   if (!cfg.ok) return { ok: false, error: cfg.error };
 
   try {
-    const data = await mcpPost<DkimInfo>(
+    const data = await mcpPost<unknown>(
       "voxmail_get_dkim/call",
       { domain },
       "voxmail.read",
     );
-    return { ok: true, dkim: data };
+    // The MCP wraps the payload as { dkim: { dkim_selector, dkim_txt, ... } }.
+    // Unwrap the envelope; fall back to accepting a bare DkimInfo if already unwrapped.
+    const dkim = ((data as any)?.dkim ?? data) as DkimInfo;
+    return { ok: true, dkim };
   } catch (err) {
     return {
       ok: false,
