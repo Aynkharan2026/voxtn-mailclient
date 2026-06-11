@@ -9,6 +9,7 @@ import {
   voiceToEmailAction,
   transformAction,
   followUpAction,
+  draftWithAiAction,
   type TransformOp,
 } from "@/app/(shell)/compose/actions";
 
@@ -61,6 +62,14 @@ export function ComposeForm({
   // W2: AI transform state
   const [transformingOp, setTransformingOp] = useState<TransformOp | null>(null);
   const [followingUp, setFollowingUp] = useState(false);
+  // E3: AI-draft panel state — three explicit visual states.
+  const [aiIntent, setAiIntent] = useState("");
+  const [aiDraftState, setAiDraftState] = useState<
+    | { state: "idle" }
+    | { state: "generating" }
+    | { state: "ready" }
+    | { state: "error" }
+  >({ state: "idle" });
 
   const handleInsertBookingLink = async () => {
     setInsertingBooking(true);
@@ -228,6 +237,26 @@ export function ComposeForm({
     }
   };
 
+  // E3: Draft with AI — inserts the returned draft into the EDITABLE body
+  // (same mechanism as follow-up) and NEVER auto-sends. tier label only.
+  const handleAiDraft = async () => {
+    if (!aiIntent.trim()) return;
+    setAiDraftState({ state: "generating" });
+    try {
+      const res = await draftWithAiAction(aiIntent);
+      if (res.ok) {
+        const base = bodyHtml ? `${res.draft}<p></p>${bodyHtml}` : res.draft;
+        setBodyHtml(base);
+        setAiDraftState({ state: "ready" });
+      } else {
+        setAiDraftState({ state: "error" });
+      }
+    } catch {
+      // Never surface a raw backend error (could carry a model name).
+      setAiDraftState({ state: "error" });
+    }
+  };
+
   const sendDisabled =
     isPending || status.state === "sending" || status.state === "pending";
 
@@ -312,6 +341,69 @@ export function ComposeForm({
           <span>📅</span>
           <span>{insertingBooking ? "Inserting…" : "Insert Booking Link"}</span>
         </button>
+      </div>
+
+      {/* E3: AI Draft panel — generate an editable draft from a short intent. */}
+      <div
+        data-testid="ai-draft-panel"
+        className="flex flex-col gap-2 border border-gray-200 rounded px-3 py-2.5 bg-gray-50"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-brand-navy flex items-center gap-1">
+            <span aria-hidden="true">✨</span> Draft with AI
+          </span>
+          <span
+            data-testid="ai-draft-tier"
+            className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-50 text-brand-amber border border-brand-amber/40"
+          >
+            Standard
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            data-testid="ai-draft-intent"
+            value={aiIntent}
+            onChange={(e) => setAiIntent(e.target.value)}
+            placeholder="What should this email say?"
+            disabled={sendDisabled || aiDraftState.state === "generating"}
+            className="flex-1 min-w-[12rem] rounded border border-gray-300 px-3 py-1.5 text-sm outline-none focus:border-brand-amber bg-white disabled:opacity-50"
+          />
+          <button
+            type="button"
+            data-testid="ai-draft-generate"
+            onClick={handleAiDraft}
+            disabled={
+              sendDisabled ||
+              aiDraftState.state === "generating" ||
+              !aiIntent.trim()
+            }
+            className="px-3 py-1.5 text-sm rounded bg-brand-amber text-brand-navy font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {aiDraftState.state === "generating" && (
+              <span className="w-3 h-3 rounded-full border-2 border-brand-navy border-t-transparent animate-spin inline-block" />
+            )}
+            Generate
+          </button>
+        </div>
+        {aiDraftState.state !== "idle" && (
+          <div data-testid="ai-draft-status" className="text-xs">
+            {aiDraftState.state === "generating" && (
+              <span className="text-gray-500 flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full border-2 border-brand-amber border-t-transparent animate-spin inline-block" />
+                Generating draft · Standard…
+              </span>
+            )}
+            {aiDraftState.state === "ready" && (
+              <span className="text-green-700">✓ Draft ready · Standard</span>
+            )}
+            {aiDraftState.state === "error" && (
+              <span className="text-red-700">
+                Couldn’t generate a draft right now — you can write it manually.
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* W2: AI transform toolbar */}

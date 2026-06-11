@@ -7,6 +7,7 @@ import { ShellKeyboardShortcuts } from "@/components/shell/ShellKeyboardShortcut
 
 const NAV_FOLDERS = [
   { href: "/inbox", label: "Inbox" },
+  { href: "/contacts", label: "Contacts" },
   { href: "/briefing", label: "Briefing" },
   { href: "/sent", label: "Sent" },
   { href: "/drafts", label: "Drafts" },

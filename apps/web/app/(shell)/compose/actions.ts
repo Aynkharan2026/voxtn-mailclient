@@ -42,6 +42,11 @@ export type FollowUpResult =
   | { ok: true; draft: string }
   | { ok: false; error: string };
 
+// E3: AI-draft result. tier is a user-facing label only — NEVER a model name.
+export type DraftWithAiResult =
+  | { ok: true; draft: string; tier: "Standard" }
+  | { ok: false; error: string };
+
 // --- MCP helpers (mirror inbox/actions.ts pattern) ---
 function getMcpConfig():
   | { ok: true; tokenUrl: string; clientId: string; clientSecret: string; audience: string; mcpUrl: string }
@@ -294,5 +299,46 @@ export async function followUpAction(
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+
+// E3: Draft from a short intent — reuse the ai-bridge transform expand op.
+// IMPORTANT: never surface a model name in the result, the error, or any log.
+// Only the tier label "Standard" is ever exposed.
+export async function draftWithAiAction(
+  intent: string,
+): Promise<DraftWithAiResult> {
+  if (!intent || !intent.trim()) {
+    return { ok: false, error: "Add a short description of what to write." };
+  }
+  const base = process.env.AI_BRIDGE_URL;
+  const token = process.env.INTERNAL_SERVICE_TOKEN;
+  if (!base || !token) {
+    return { ok: false, error: "server not configured" };
+  }
+  try {
+    const res = await fetch(`${base}/ai/transform`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      // "elaborate" is the expand/enrich op — grow the short intent into a draft.
+      body: JSON.stringify({ text: intent, op: "elaborate" satisfies TransformOp }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      // Do not leak backend detail (could name a model); return a generic message.
+      return { ok: false, error: "Couldn't generate a draft right now." };
+    }
+    const data = (await res.json()) as { result: string };
+    if (!data.result || !data.result.trim()) {
+      return { ok: false, error: "Couldn't generate a draft right now." };
+    }
+    return { ok: true, draft: data.result, tier: "Standard" };
+  } catch {
+    // Swallow the raw error — never log/return anything that could carry a model name.
+    return { ok: false, error: "Couldn't generate a draft right now." };
   }
 }
