@@ -7,15 +7,9 @@ import type {
   ContactTimelineResult,
   ContactMessageResult,
 } from "@/app/(shell)/contacts/actions";
+import { sanitizeEmailHtml as sanitizeHtml } from "@/lib/sanitize-html";
 
-function sanitizeHtml(html: string): string {
-  // Strip <script>, <iframe>, and on* event attributes — minimal XSS mitigation.
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "")
-    .replace(/\son\w+\s*=[^\s>]*/gi, "");
-}
+// sanitizeHtml now delegates to the shared DOMPurify sanitizer (see import above).
 
 function getBodyText(
   body: ContactMessage["body"],
