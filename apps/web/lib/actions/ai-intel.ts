@@ -49,8 +49,9 @@ export async function summarizeThreadAction(
       const detail = await res.text();
       return { ok: false, error: `ai-bridge ${res.status}: ${detail}` };
     }
-    const data = (await res.json()) as { headline: string; bullets: string[] };
-    return { ok: true, headline: data.headline ?? "", bullets: data.bullets ?? [] };
+    // ai-bridge returns `one_line` (not `headline`); read the actual field.
+    const data = (await res.json()) as { one_line: string; bullets: string[] };
+    return { ok: true, headline: data.one_line ?? "", bullets: data.bullets ?? [] };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
