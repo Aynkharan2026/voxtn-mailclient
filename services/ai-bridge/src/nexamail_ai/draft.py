@@ -43,7 +43,7 @@ async def draft_reply(
 ) -> dict[str, Any]:
     """Generate a suggested reply draft via the sovereign gateway.
 
-    Returns a dict with keys: draft_subject, draft_body, language, model_used,
+    Returns a dict with keys: draft_subject, draft_body, language, tier,
     requires_approval (always True).
     On parse failure returns {"error": "parse", "raw": <first 500 chars>}.
     Raises HTTPException(503) if gateway_token is not configured.
@@ -101,7 +101,8 @@ async def draft_reply(
         "draft_subject": str(parsed.get("draft_subject", "")),
         "draft_body": str(parsed.get("draft_body", "")),
         "language": language,
-        "model_used": model_alias,
+        # Tier label only — no model names in responses (standing rule).
+        "tier": "Standard",
         "requires_approval": True,
     }
 

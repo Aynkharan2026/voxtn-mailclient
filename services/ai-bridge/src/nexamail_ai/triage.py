@@ -48,7 +48,7 @@ async def classify(
     """Classify inbound email sentiment and intent via the sovereign gateway.
 
     Returns a dict with keys: sentiment, intent, stop_request, language, summary,
-    priority, model_used.  On parse failure returns {"error":"parse","raw":<truncated>}.
+    priority, tier.  On parse failure returns {"error":"parse","raw":<truncated>}.
     Raises HTTPException(503) if gateway_token is not configured.
     """
     if not settings.gateway_token:
@@ -110,7 +110,9 @@ async def classify(
         "language": result.get("language", "other"),
         "summary": result.get("summary", ""),
         "priority": priority,
-        "model_used": model_alias,
+        # Tier label only — model names must never leave the gateway boundary
+        # (standing rule: no model names in UI, logs, or responses).
+        "tier": "Standard",
     }
 
 
