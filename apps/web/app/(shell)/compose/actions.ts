@@ -149,6 +149,8 @@ export async function sendEmailAction(
       subject: payload.subject,
       body: payload.html,
     };
+    if (payload.cc) reqBody.cc = payload.cc;
+    if (payload.bcc) reqBody.bcc = payload.bcc;
     if (payload.in_reply_to) reqBody.in_reply_to = payload.in_reply_to;
     if (payload.references) reqBody.references = payload.references;
 
